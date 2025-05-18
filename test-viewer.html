@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMT IIIF Viewer Test</title>
+    <style>
+        body { margin: 0; font-family: sans-serif; background-color: #f0f0f0; }
+        #viewer-container {
+            width: 80vw; /* Responsive width */
+            height: 80vh; /* Responsive height */
+            max-width: 900px;
+            max-height: 700px;
+            border: 1px solid #ccc;
+            margin: 20px auto; /* Center the container */
+            position: relative; /* For potential future absolutely positioned elements */
+            overflow: hidden; /* Ensure canvas doesn't overflow if sized differently */
+            background-color: #e0e0e0; /* Background for the viewer area */
+        }
+        /* Canvas itself will be 100% of container by JS */
+    </style>
+</head>
+<body>
+    <h1>HMT IIIF Viewer Test</h1>
+    <p>Displaying URN: <code id="urn-display"></code></p>
+    <div id="viewer-container">
+        <p style="text-align: center; padding-top: 20px;">Loading viewer...</p>
+    </div>
+
+    <script src="hmt-iiif-viewer.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const testURN = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013';
+            // const testURN = 'urn:cite2:hmt:msA.2017a:23_23_6_2_ congenial_friend_A_12r_20_1'; // example with different URN structure if needed for testing later
+            // const testURN = 'urn:cite2:hmt:vaimg.2017a:VA048VN_0260'; // Another test image
+
+            document.getElementById('urn-display').textContent = testURN;
+            
+            try {
+                HMTIIIFViewer.init(testURN, 'viewer-container');
+            } catch (e) {
+                console.error("Error initializing viewer:", e);
+                document.getElementById('viewer-container').innerHTML = '<p style="color:red;">Could not initialize viewer. Check console.</p>';
+            }
+        });
+    </script>
+</body>
+</html>
