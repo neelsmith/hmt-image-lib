@@ -1,4 +1,4 @@
-# HMT IIIF Viewer & Utilities API Documentation
+# `hmt-iiif-lib.js`: API Documentation
 
 `hmt-iiif-lib.js` is a javascript library providing a lightweight, from-scratch IIIF image viewer tailored for citation by CITE2 URNs, along with utility functions for generating IIIF URLs. It is configured to work the Homer Multitext project's IIIF image server. 
 
@@ -23,16 +23,16 @@ It is designed to be simple and easy to use, with a focus on functionality rathe
 
 ## Installation
 
-Include the `hmt-iiif-viewer.js` script in your HTML file:
+Include the `hmt-iiif-lib.js` script in your HTML file:
 
 ```html
-<script src="path/to/hmt-iiif-viewer.js"></script>
+<script src="path/to/hmt-iiif-lib.js"></script>
 ```
 
-Or, if hosted on a CDN like jsDelivr (once you publish it to GitHub):
+or us jsDeliver:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/neelsmith/YOUR_REPONAME@VERSION/hmt-iiif-lib.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/neelsmith/hmt-image-lib/hmt-iiif-lib.js"></script>
 ```
 
 The library exposes a global object `HMTIIIFViewer`.
