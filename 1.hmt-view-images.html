@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMT IIIF Viewer Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .viewer-container {
+            width: 600px;
+            height: 400px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            margin-bottom: 20px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Homer Multitext IIIF Viewer Test</h1>
+
+    <div>
+        <h2>Image 1: urn:cite2:hmt:vaimg.2017a:VA012RN_0013</h2>
+        <div id="viewer1" class="viewer-container"></div>
+    </div>
+
+    <div>
+        <h2>Image 2: urn:cite2:hmt:vaimg.2017a:VA013RN_0014</h2>
+        <div id="viewer2" class="viewer-container"></div>
+    </div>
+
+    <script src="hmt-iiif-lib.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const urn1 = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013';
+            const urn2 = 'urn:cite2:hmt:vaimg.2017a:VA013RN_0014';
+
+            HMTIIIFViewer.createViewer('viewer1', urn1);
+            HMTIIIFViewer.createViewer('viewer2', urn2);
+        });
+    </script>
+
+</body>
+</html>
