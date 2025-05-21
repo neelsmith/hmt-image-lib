@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IIIF URL Generator Test</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        .input-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; padding:15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; width: 90%; max-width: 600px;}
+        .input-group label { font-weight: bold; }
+        .input-group input[type="text"], .input-group input[type="number"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        #outputArea { width: 90%; max-width: 600px; }
+        #generatedUrl { word-break: break-all; background-color: #eee; padding: 10px; border-radius: 4px; margin-bottom: 10px; font-family: monospace; }
+        #imageDisplay { border: 1px solid #ccc; max-width: 100%; max-height: 400px; object-fit: contain; } /* max-height for display */
+        .error { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>IIIF URL Generator for HMT URNs</h1>
+
+    <div class="input-group">
+        <label for="urnInput">Image URN (can include @roi):</label>
+        <input type="text" id="urnInput" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15">
+
+        <label for="widthInput">Desired Width (px, optional):</label>
+        <input type="number" id="widthInput" placeholder="e.g., 800">
+
+        <label for="heightInput">Desired Height (px, optional):</label>
+        <input type="number" id="heightInput" placeholder="e.g., 600">
+
+        <button id="generateBtn">Generate URL & Show Image</button>
+    </div>
+
+    <div id="outputArea">
+        <h3>Generated IIIF URL:</h3>
+        <div id="generatedUrl">(URL will appear here)</div>
+        <h3>Image Preview:</h3>
+        <img id="imageDisplay" src="" alt="Generated IIIF Image">
+        <p id="errorMessage" class="error"></p>
+    </div>
+
+    <script src="hmt-iiif-lib.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const urnInputElement = document.getElementById('urnInput');
+            const widthInputElement = document.getElementById('widthInput');
+            const heightInputElement = document.getElementById('heightInput');
+            const generateBtnElement = document.getElementById('generateBtn');
+            const generatedUrlElement = document.getElementById('generatedUrl');
+            const imageDisplayElement = document.getElementById('imageDisplay');
+            const errorMessageElement = document.getElementById('errorMessage');
+
+            generateBtnElement.addEventListener('click', function() {
+                const urn = urnInputElement.value.trim();
+                const options = {};
+                const widthVal = widthInputElement.value.trim();
+                const heightVal = heightInputElement.value.trim();
+
+                if (widthVal) options.width = parseInt(widthVal, 10);
+                if (heightVal) options.height = parseInt(heightVal, 10);
+
+                errorMessageElement.textContent = '';
+                generatedUrlElement.textContent = '(Generating...)';
+                imageDisplayElement.src = ''; // Clear previous image
+
+                if (!urn) {
+                    errorMessageElement.textContent = 'Please enter a URN.';
+                    generatedUrlElement.textContent = '';
+                    return;
+                }
+
+                const iiifUrl = HMTIIIFViewer.generateIIIFUrl(urn, options);
+
+                if (iiifUrl) {
+                    generatedUrlElement.textContent = iiifUrl;
+                    imageDisplayElement.src = iiifUrl;
+                    imageDisplayElement.alt = `Image for URN: ${urn}`;
+                } else {
+                    generatedUrlElement.textContent = '(Error generating URL)';
+                    errorMessageElement.textContent = 'Could not generate IIIF URL. Check console for details and ensure URN is valid.';
+                }
+            });
+
+            // Optionally, generate on page load with default values
+            // generateBtnElement.click(); 
+        });
+    </script>
+</body>
+</html>

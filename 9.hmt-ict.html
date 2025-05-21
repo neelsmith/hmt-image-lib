@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IIIF Viewer - ROI Drawing Test (Alt/Option Key)</title>
+    <style>
+        body { display: flex; flex-direction: column; align-items: center; font-family: sans-serif; margin: 20px; }
+        .controls { margin-bottom: 20px; padding: 10px; background-color: #f0f0f0; border-radius: 5px; width: 80%; max-width: 700px;}
+        .controls label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .controls input[type="text"] { width: calc(100% - 22px); padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .controls textarea { width: calc(100% - 22px); min-height: 100px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; }
+        .viewer-container {
+            width: 70vw;
+            max-width: 700px;
+            height: 50vh;
+            max-height: 500px;
+            border: 1px solid #ccc;
+            background-color: #e9e9e9;
+            margin-bottom: 20px;
+        }
+        #instructions { margin-bottom:15px; padding:10px; background-color: #eef; border: 1px solid #ccf; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>IIIF Viewer - ROI Drawing Test (Alt/Option Key)</h1>
+
+    <div id="instructions">
+        <p>Hold <strong>Option</strong> (Mac) or <strong>Alt</strong> (Windows/Linux) key and then click and drag on the image to draw a rectangle. Release the mouse button to finalize the ROI. Pan and zoom are disabled while the modifier key is held.</p>
+    </div>
+
+    <div class="controls">
+        <label for="urnInput">Base Image URN:</label>
+        <input type="text" id="urnInput" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
+        <button id="loadButton">Load Image</button>
+    </div>
+
+    <div id="imageViewer" class="viewer-container"></div>
+
+    <div class="controls">
+        <label for="drawnRois">Drawn ROIs (URN@x,y,w,h format):</label>
+        <textarea id="drawnRois" readonly></textarea>
+        <button id="clearRoisButton">Clear Drawn ROIs List</button>
+    </div>
+
+    <script src="hmt-iiif-lib.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const urnInputElement = document.getElementById('urnInput');
+            const loadButtonElement = document.getElementById('loadButton');
+            const viewerContainerId = 'imageViewer';
+            const drawnRoisTextarea = document.getElementById('drawnRois');
+            const clearRoisButton = document.getElementById('clearRoisButton');
+
+            function handleNewRoi(roiUrnString) {
+                drawnRoisTextarea.value += roiUrnString + '\n';
+            }
+
+            function loadImageViewer() {
+                const baseUrn = urnInputElement.value.trim();
+                if (baseUrn) {
+                    document.getElementById(viewerContainerId).innerHTML = 'Loading...';
+                    HMTIIIFViewer.createViewer(viewerContainerId, baseUrn, handleNewRoi);
+                } else {
+                    document.getElementById(viewerContainerId).innerHTML = '<p style="color:red;">Please enter a base URN.</p>';
+                }
+            }
+
+            loadButtonElement.addEventListener('click', loadImageViewer);
+            clearRoisButton.addEventListener('click', () => {
+                drawnRoisTextarea.value = '';
+            });
+
+            loadImageViewer();
+        });
+    </script>
+</body>
+</html>
