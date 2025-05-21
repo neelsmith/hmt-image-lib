@@ -1,11 +1,11 @@
 (function(window) {
     'use strict';
 
+    // ... (HMT_IIIF_PROTOCOL, HMT_IIIF_SERVER_BASE, HMT_IIIF_PATH_BASE, ROI_COLORS, ROI_OPACITY as before)
     const HMT_IIIF_PROTOCOL = "http";
     const HMT_IIIF_SERVER_BASE = "www.homermultitext.org/iipsrv?IIIF=";
     const HMT_IIIF_PATH_BASE = "/project/homer/pyramidal/deepzoom";
 
-    // Predefined distinct colors for ROIs
     const ROI_COLORS = [
         { r: 255, g: 0, b: 0 },    // Red
         { r: 0, g: 255, b: 0 },    // Green
@@ -16,10 +16,10 @@
         { r: 255, g: 165, b: 0 },  // Orange
         { r: 128, g: 0, b: 128 },  // Purple
     ];
-    const ROI_OPACITY = 0.3; // Opacity for filled ROIs
+    const ROI_OPACITY = 0.3;
 
     function parseCite2Urn(urnString) {
-        // ... (parseCite2Urn remains the same as in the previous correct version)
+        // ... (parseCite2Urn remains the same)
         if (typeof urnString !== 'string') return null;
         const parts = urnString.split(':');
         if (parts.length !== 5 || parts[0] !== 'urn' || parts[1] !== 'cite2') {
@@ -59,7 +59,7 @@
         }
 
         return {
-            urn: urnString, // Keep original URN for reference if needed
+            urn: urnString,
             namespace: namespace,
             collection: collection,
             version: version,
@@ -79,36 +79,44 @@
         return path;
     }
 
-    // Takes an array of URN strings
-    function createViewer(elementId, urnStrings) {
+    // Accepts a single URN string OR an array of URN strings
+    function createViewer(elementId, urnInput) { // Renamed second param to urnInput
         const container = document.getElementById(elementId);
         if (!container) {
             console.error(`Element with ID '${elementId}' not found.`);
             return;
         }
 
-        if (!Array.isArray(urnStrings) || urnStrings.length === 0) {
+        let urnStringsArray;
+        if (typeof urnInput === 'string') {
+            urnStringsArray = [urnInput];
+        } else if (Array.isArray(urnInput)) {
+            urnStringsArray = urnInput;
+        } else {
+            container.innerHTML = `<p style="color:red;">Invalid URN input: Must be a string or an array of strings.</p>`;
+            return;
+        }
+
+        if (urnStringsArray.length === 0) {
             container.innerHTML = `<p style="color:red;">No URNs provided.</p>`;
             return;
         }
 
+        // Clear container and basic setup
         container.innerHTML = '';
         container.style.overflow = 'hidden';
         container.style.position = 'relative';
         container.style.cursor = 'grab';
 
         const imgElement = document.createElement('img');
-        // ... (imgElement setup as before)
         imgElement.style.position = 'absolute';
         imgElement.style.top = '0';
         imgElement.style.left = '0';
         imgElement.draggable = false;
-        // Alt text from the first URN
-        imgElement.alt = `IIIF image for ${urnStrings[0]}`;
+        imgElement.alt = `IIIF image for ${urnStringsArray[0]}`; // Alt text from the first URN
         container.appendChild(imgElement);
         
         const spinner = document.createElement('div');
-        // ... (spinner setup as before)
         spinner.innerHTML = 'Loading...';
         spinner.style.position = 'absolute';
         spinner.style.top = '50%';
@@ -120,8 +128,8 @@
         spinner.style.display = 'none';
         container.appendChild(spinner);
 
-        let highlightElements = []; // Array of DIVs for ROI highlights
-        let roisData = [];          // Array of { roiOrigPx, colorString }
+        let highlightElements = [];
+        let roisData = [];
 
         let imageInfo = null;
         let viewportWidth = container.clientWidth;
@@ -139,25 +147,22 @@
         const DEBOUNCE_DELAY = 150;
         let lastRequestedRegion = { x: 0, y: 0, w: 0, h: 0 };
 
-        // Parse all URNs
-        const parsedUrns = urnStrings.map(urnStr => parseCite2Urn(urnStr)).filter(Boolean);
+        const parsedUrns = urnStringsArray.map(urnStr => parseCite2Urn(urnStr)).filter(Boolean);
         if (parsedUrns.length === 0) {
             container.innerHTML = `<p style="color:red;">No valid URNs could be parsed.</p>`;
             return;
         }
 
-        // Use the first valid URN to determine the base image for IIIF request
         const primaryParsedUrn = parsedUrns[0];
-        const baseImageObjectId = primaryParsedUrn.objectId; // For checking consistency
+        const baseImageObjectId = primaryParsedUrn.objectId;
 
-        // Validate that all URNs (if multiple) refer to the same base image
         for (let i = 1; i < parsedUrns.length; i++) {
             if (parsedUrns[i].objectId !== baseImageObjectId ||
                 parsedUrns[i].namespace !== primaryParsedUrn.namespace ||
                 parsedUrns[i].collection !== primaryParsedUrn.collection ||
                 parsedUrns[i].version !== primaryParsedUrn.version) {
-                console.error("Mismatched base images in URN list. All URNs must refer to the same image, differing only by ROI.", parsedUrns[i], primaryParsedUrn);
-                container.innerHTML = `<p style="color:red;">Error: URNs refer to different base images. Please ensure all URNs identify the same image (differing only by ROI suffix).</p>`;
+                console.error("Mismatched base images in URN list.", parsedUrns[i], primaryParsedUrn);
+                container.innerHTML = `<p style="color:red;">Error: URNs refer to different base images.</p>`;
                 return;
             }
         }
@@ -193,22 +198,18 @@
                     viewportHeight / imageInfo.height
                 );
 
-                // Initialize ROI highlights
                 parsedUrns.forEach((pUrn, index) => {
                     if (pUrn.roi && imageInfo) {
                         const color = ROI_COLORS[index % ROI_COLORS.length];
                         const colorString = `rgba(${color.r}, ${color.g}, ${color.b}, ${ROI_OPACITY})`;
-
                         const highlightDiv = document.createElement('div');
                         highlightDiv.style.position = 'absolute';
-                        highlightDiv.style.backgroundColor = colorString; // Filled, semi-opaque
-                        // No border for filled style, unless desired:
-                        // highlightDiv.style.border = `2px solid rgba(${color.r}, ${color.g}, ${color.b}, ${ROI_OPACITY + 0.2})`;
+                        highlightDiv.style.backgroundColor = colorString;
                         highlightDiv.style.boxSizing = 'border-box';
                         highlightDiv.style.pointerEvents = 'none';
                         highlightDiv.style.display = 'none';
                         container.appendChild(highlightDiv);
-                        highlightElements.push(highlightDiv);
+                        // highlightElements.push(highlightDiv); // Not strictly needed if using roisData.element
 
                         roisData.push({
                             roiOrigPx: {
@@ -217,7 +218,7 @@
                                 w: pUrn.roi.w * imageInfo.width,
                                 h: pUrn.roi.h * imageInfo.height
                             },
-                            element: highlightDiv // Keep a reference for direct manipulation
+                            element: highlightDiv
                         });
                     }
                 });
@@ -233,15 +234,18 @@
             });
 
         function scheduleRender() {
+            // ... (scheduleRender remains the same)
             spinner.style.display = 'block';
             clearTimeout(renderTimeout);
             renderTimeout = setTimeout(renderImage, DEBOUNCE_DELAY);
         }
 
-        function updateHighlightOverlays() { // Renamed from updateHighlightOverlay
+        function updateHighlightOverlays() {
+            // ... (updateHighlightOverlays remains the same)
             if (!imageInfo || viewportWidth === 0 || viewportHeight === 0 ||
                 lastRequestedRegion.w <= 0 || lastRequestedRegion.h <= 0 || roisData.length === 0) {
-                highlightElements.forEach(el => el.style.display = 'none');
+                // Ensure all potential old highlight elements are hidden if no roisData
+                roisData.forEach(roiItem => { if(roiItem.element) roiItem.element.style.display = 'none';});
                 return;
             }
 
@@ -285,9 +289,8 @@
             });
         }
 
-
         function renderImage() {
-            // ... (renderImage logic to fetch and display image remains the same)
+            // ... (renderImage remains the same)
             if (!imageInfo || viewportWidth === 0 || viewportHeight === 0) return;
 
             let reqWidthOrig = viewportWidth / currentScale;
@@ -328,12 +331,11 @@
             imgElement.style.height = '100%';
             imgElement.style.objectFit = 'contain';
 
-            updateHighlightOverlays(); // Update all highlight overlays
+            updateHighlightOverlays();
         }
 
-        // constrainState function remains the same
         function constrainState() {
-            // ... (constrainState logic as before)
+            // ... (constrainState remains the same)
             if (!imageInfo) return;
             const minFitScale = Math.min(viewportWidth / imageInfo.width, viewportHeight / imageInfo.height);
             currentScale = Math.max(minFitScale / 4, currentScale); 
@@ -359,11 +361,10 @@
             }
         }
 
-        // setupEventListeners function remains largely the same
         function setupEventListeners() {
-            // ... (setupEventListeners logic as before for zoom and pan)
-            // Zoom
-            container.addEventListener('wheel', function(event) {
+            // ... (setupEventListeners remains the same)
+             // Zoom
+             container.addEventListener('wheel', function(event) {
                 event.preventDefault();
                 const zoomFactor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
                 const rect = container.getBoundingClientRect();
