@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HMT Image Viewer - Manage Rectangles & Preview</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; display: flex; gap: 20px; padding: 10px; margin:0; }
+        .controls-column { display: flex; flex-direction: column; gap: 15px; width: 380px; }
+        .viewer-column { flex-grow: 1; }
+        #viewer-container { 
+            width: 100%; 
+            height: 600px; 
+            border: 1px solid black; 
+            background-color: #f0f0f0;
+        }
+        .control-group { margin-bottom: 10px; padding:10px; border:1px solid #eee; background:#fcfcfc;}
+        label, input, button { font-size: 0.9em; }
+        input[type="text"] { width: calc(100% - 10px); padding: 5px; margin-bottom: 5px; box-sizing: border-box; }
+        button { padding: 8px 12px; cursor: pointer; background-color: #e0e0e0; border: 1px solid #ccc;}
+        button:hover { background-color: #d0d0d0; }
+        button.remove-btn { background-color: #ffdddd; margin-left: 10px; }
+        button.remove-btn:hover { background-color: #ffcccc; }
+        
+        #rect-list-container { 
+            border: 1px solid #ccc; 
+            padding: 10px; 
+            background-color: #f9f9f9; 
+            max-height: 300px; 
+            overflow-y: auto;
+        }
+        #rect-list ul { list-style-type: none; padding: 0; margin: 0; }
+        #rect-list li { 
+            padding: 8px; 
+            border-bottom: 1px solid #eee; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            font-size: 0.8em; 
+        }
+        #rect-list li:last-child { border-bottom: none; }
+        #rect-list li .urn-link {
+            cursor: pointer;
+            color: #007bff;
+            text-decoration: underline;
+            word-break: break-all; 
+            flex-grow: 1; 
+            margin-right: 10px;
+        }
+        #rect-list li .urn-link:hover { color: #0056b3; }
+
+        h1, h2 { margin-top: 0; font-size: 1.2em; }
+        p { font-size: 0.9em; color: #555; margin-top:0; }
+
+        #clicked-rect-preview-container {
+            margin-top: 15px; 
+        }
+        #clicked-rect-image-display img {
+            max-width: 100%;
+            height: auto; 
+            max-height: 300px; 
+            border: 1px solid #ccc;
+            margin-top: 10px;
+            background-color: #fff; 
+        }
+        #copy-status-msg {
+            margin-top: 5px;
+            font-size: 0.85em;
+            font-style: italic;
+            color: green;
+            height: 1.2em; 
+        }
+    </style>
+</head>
+<body>
+    <div class="controls-column">
+        <h1>Manage Rectangles & Preview</h1>
+        <div class="control-group">
+            <label for="urn-input">Image URN:</label>
+            <input type="text" id="urn-input" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
+            <button id="load-urn-btn">Load Image</button>
+        </div>
+         <p>Use <strong>Option (Alt) + Click & Drag</strong> to draw rectangles on the image.</p>
+
+        <div id="rect-list-container" class="control-group">
+            <h2>Highlighted Rectangles:</h2>
+            <div id="rect-list">
+                <ul></ul>
+                <p id="no-rects-msg">No rectangles selected yet.</p>
+            </div>
+            <button id="clear-all-rects-btn" style="margin-top: 10px; background-color: #ffdddd;" disabled>Clear All Rectangles</button>
+        </div>
+
+        <div id="clicked-rect-preview-container" class="control-group">
+            <h2>Clicked Rectangle Preview:</h2>
+            <div id="clicked-rect-image-display">
+                <p id="no-preview-msg">Click a URN in the list above to see its image preview.</p>
+                <img id="clicked-rect-image" src="#" alt="Preview of clicked rectangle" style="display: none;">
+            </div>
+            <div id="copy-status-msg"></div>
+        </div>
+    </div>
+
+    <div class="viewer-column">
+        <div id="viewer-container"></div>
+    </div>
+
+    <!-- Reference the external library file -->
+    <script src="hmt-iiif-lib.js"></script> 
+    
+    <!-- Page-specific JavaScript embedded below -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let currentViewer = null;
+            const urnInput = document.getElementById('urn-input');
+            const loadBtn = document.getElementById('load-urn-btn');
+            const viewerContainerId = 'viewer-container';
+            
+            const rectListUl = document.querySelector('#rect-list ul');
+            const noRectsMsg = document.getElementById('no-rects-msg');
+            const clearAllBtn = document.getElementById('clear-all-rects-btn');
+
+            const noPreviewMsg = document.getElementById('no-preview-msg');
+            const clickedRectImage = document.getElementById('clicked-rect-image');
+            const copyStatusMsg = document.getElementById('copy-status-msg');
+            let copyStatusTimeout = null;
+
+
+            function displayCopyStatus(message, success = true) {
+                copyStatusMsg.textContent = message;
+                copyStatusMsg.style.color = success ? 'green' : 'red';
+                
+                if (copyStatusTimeout) {
+                    clearTimeout(copyStatusTimeout);
+                }
+                copyStatusTimeout = setTimeout(() => {
+                    copyStatusMsg.textContent = '';
+                }, 3000); 
+            }
+
+            function handleUrnClick(urnToPreview) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(urnToPreview).then(function() {
+                        displayCopyStatus(`Copied: ${urnToPreview.substring(0,30)}...`);
+                    }, function(err) {
+                        displayCopyStatus('Failed to copy URN.', false);
+                        console.error('Could not copy text: ', err);
+                    });
+                } else {
+                    displayCopyStatus('Clipboard API not available.', false);
+                }
+
+                try {
+                    // Ensure HMTImageLibrary is available (it should be if the external script loaded)
+                    if (!window.HMTImageLibrary || !window.HMTImageLibrary.getIIIFImageUrl) {
+                        displayCopyStatus('HMT Image Library not loaded.', false);
+                        console.error('HMTImageLibrary or getIIIFImageUrl not found.');
+                        return;
+                    }
+                    const imageUrl = HMTImageLibrary.getIIIFImageUrl(urnToPreview); 
+                    
+                    clickedRectImage.src = imageUrl;
+                    clickedRectImage.alt = `Preview for ${urnToPreview}`;
+                    clickedRectImage.style.display = 'block';
+                    noPreviewMsg.style.display = 'none';
+
+                    clickedRectImage.onerror = function() {
+                        displayCopyStatus(`Error loading preview for ${urnToPreview.substring(0,30)}...`, false);
+                        clickedRectImage.style.display = 'none';
+                        noPreviewMsg.style.display = 'block';
+                        noPreviewMsg.textContent = 'Could not load image preview.';
+                        this.onerror = null; 
+                    }
+
+                } catch (error) {
+                    console.error("Error getting IIIF URL for preview:", error);
+                    displayCopyStatus(`Error generating preview URL.`, false);
+                    clickedRectImage.style.display = 'none';
+                    noPreviewMsg.style.display = 'block';
+                    noPreviewMsg.textContent = 'Error generating preview URL.';
+                }
+            }
+
+            function renderRectangleList(rectURNsString) {
+                rectListUl.innerHTML = ''; 
+                const urns = rectURNsString ? rectURNsString.split('\n').filter(urn => urn.trim() !== '') : [];
+
+                if (urns.length === 0) {
+                    noRectsMsg.style.display = 'block';
+                    clearAllBtn.disabled = true;
+                } else {
+                    noRectsMsg.style.display = 'none';
+                    clearAllBtn.disabled = false;
+                    urns.forEach(urn => {
+                        const li = document.createElement('li');
+                        
+                        const urnLink = document.createElement('a'); 
+                        urnLink.className = 'urn-link';
+                        urnLink.textContent = urn;
+                        urnLink.title = 'Click to copy URN and show preview';
+                        urnLink.href = '#'; 
+                        urnLink.addEventListener('click', function(e) {
+                            e.preventDefault(); 
+                            handleUrnClick(urn);
+                        });
+                        li.appendChild(urnLink);
+
+                        const removeBtn = document.createElement('button');
+                        removeBtn.textContent = 'Remove';
+                        removeBtn.className = 'remove-btn';
+                        removeBtn.onclick = function() {
+                            if (currentViewer) {
+                                currentViewer.removeRectangle(urn);
+                                try {
+                                    if (!window.HMTImageLibrary || !window.HMTImageLibrary.getIIIFImageUrl) {
+                                        console.error('HMTImageLibrary or getIIIFImageUrl not found during remove.');
+                                        return;
+                                    }
+                                    const urnFullUrl = HMTImageLibrary.getIIIFImageUrl(urn);
+                                    if (clickedRectImage.src === urnFullUrl) {
+                                        clickedRectImage.style.display = 'none';
+                                        clickedRectImage.src = '#'; 
+                                        noPreviewMsg.style.display = 'block';
+                                        noPreviewMsg.textContent = 'Click a URN in the list above to see its image preview.';
+                                        copyStatusMsg.textContent = '';
+                                    }
+                                } catch (e) { /* URN might be malformed if error, ignore for preview clear */ }
+                            }
+                        };
+                        li.appendChild(removeBtn);
+                        rectListUl.appendChild(li);
+                    });
+                }
+            }
+            
+            function loadViewer(urn) {
+                renderRectangleList(""); 
+                clickedRectImage.style.display = 'none';
+                clickedRectImage.src = '#';
+                noPreviewMsg.style.display = 'block';
+                noPreviewMsg.textContent = 'Click a URN in the list above to see its image preview.';
+                copyStatusMsg.textContent = '';
+
+                if (!window.HMTImageLibrary || !window.HMTImageLibrary.createViewer) {
+                    console.error('HMTImageLibrary or createViewer not found.');
+                    document.getElementById(viewerContainerId).innerHTML = 
+                        '<p style="color:red;">Error: HMT Image Library script not loaded correctly.</p>';
+                    return;
+                }
+
+                currentViewer = HMTImageLibrary.createViewer(
+                    viewerContainerId,
+                    urn,
+                    {
+                        onRectangleSelected: renderRectangleList
+                    }
+                );
+                if (currentViewer && currentViewer.rectangles) { // Ensure viewer and rectangles array exist
+                    renderRectangleList(currentViewer.rectangles.map(r => r.urn).join('\n'));
+                } else if (currentViewer && !currentViewer.rectangles) {
+                    renderRectangleList(""); // If viewer exists but no rectangles property (should not happen)
+                }
+            }
+
+            loadBtn.addEventListener('click', function() {
+                const urn = urnInput.value.trim();
+                if (urn) {
+                    loadViewer(urn);
+                } else {
+                    alert("Please enter a valid URN.");
+                }
+            });
+
+            clearAllBtn.addEventListener('click', function() {
+                if (currentViewer && confirm("Are you sure you want to remove all rectangles?")) {
+                    currentViewer.clearAllRectangles();
+                    clickedRectImage.style.display = 'none';
+                    clickedRectImage.src = '#';
+                    noPreviewMsg.style.display = 'block';
+                    noPreviewMsg.textContent = 'Click a URN in the list above to see its image preview.';
+                    copyStatusMsg.textContent = '';
+                }
+            });
+
+            // Load initial image only if HMTImageLibrary is loaded
+            if (window.HMTImageLibrary) {
+                loadViewer(urnInput.value);
+            } else {
+                 // Attempt to load after a short delay if script is loading async, or show error
+                setTimeout(() => {
+                    if (window.HMTImageLibrary) {
+                        loadViewer(urnInput.value);
+                    } else {
+                        console.error('HMT Image Library failed to load.');
+                         document.getElementById(viewerContainerId).innerHTML = 
+                            '<p style="color:red;">Error: HMT Image Library script failed to load. Check console.</p>';
+                         document.getElementById('rect-list-container').innerHTML = 
+                            '<p style="color:red;">Error: HMT Image Library script failed to load.</p>';
+                    }
+                }, 500);
+            }
+        });
+    </script>
+</body>
+</html>

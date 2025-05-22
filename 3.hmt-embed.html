@@ -50,7 +50,7 @@
     </style>
 </head>
 <body>
-    <h1>IIIF Image URL Generator Test</h1>
+    <h1>HMT Image library: embed static image in web page</h1>
 
     <div class="container">
         <div>
@@ -62,11 +62,11 @@
 
     <div class="container">
         <div>
-            <label for="width-input">Width (opt.):</label>
-            <input type="number" id="width-input" placeholder="e.g., 800 (pixels)">
+            <label for="width-input">Width in pixels (opt.):</label>
+            <input type="number" id="width-input" placeholder="e.g., 800 (pixels)" value="200">
         </div>
         <div>
-            <label for="height-input">Height (opt.):</label>
+            <label for="height-input">Height in pixels (opt.):</label>
             <input type="number" id="height-input" placeholder="e.g., 600 (pixels)">
         </div>
     </div>
@@ -85,6 +85,7 @@
 
     <div id="image-display-container" class="container">
         <h2>Displayed Image:</h2>
+        <p>Click "Generate URN & Display Image" to embed image here.</p>
         <div id="image-display">
             <img id="result-image" src="#" alt="Generated image will appear here if URL is valid">
         </div>
