@@ -18,7 +18,7 @@ You can include this library in your HTML page directly from jsDelivr:
 
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/neelsmith/hmt-image-lib/hmt-iiif-lib.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/neelsmith/hmt-image-lib/hmt-iiif-lib.js@2.0.0"></script>
 ```
 
 Alternatively, you can download `hmt-iiif-lib.js` and host it yourself:
