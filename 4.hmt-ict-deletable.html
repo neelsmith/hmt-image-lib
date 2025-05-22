@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test HMT Image Viewer - Manage Rectangles</title>
+    <style>
+        body { font-family: sans-serif; display: flex; gap: 20px; padding: 10px; }
+        .controls-column { display: flex; flex-direction: column; gap: 15px; width: 350px; }
+        .viewer-column { flex-grow: 1; }
+        #viewer-container { 
+            width: 100%; /* Take available width */
+            height: 600px; 
+            border: 1px solid black; 
+            background-color: #f0f0f0;
+            position: relative; /* For potential absolute positioning of internal elements if needed */
+        }
+        .control-group { margin-bottom: 10px; padding:10px; border:1px solid #eee; background:#fcfcfc;}
+        label, input, button { font-size: 0.9em; }
+        input[type="text"] { width: calc(100% - 10px); padding: 5px; margin-bottom: 5px; }
+        button { padding: 8px 12px; cursor: pointer; background-color: #e0e0e0; border: 1px solid #ccc;}
+        button:hover { background-color: #d0d0d0; }
+        button.remove-btn { background-color: #ffdddd; margin-left: 10px; }
+        button.remove-btn:hover { background-color: #ffcccc; }
+        #rect-list-container { 
+            border: 1px solid #ccc; 
+            padding: 10px; 
+            background-color: #f9f9f9; 
+            max-height: 400px; 
+            overflow-y: auto;
+        }
+        #rect-list ul { list-style-type: none; padding: 0; margin: 0; }
+        #rect-list li { 
+            padding: 8px; 
+            border-bottom: 1px solid #eee; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            font-size: 0.85em;
+            word-break: break-all;
+        }
+        #rect-list li:last-child { border-bottom: none; }
+        h1, h2 { margin-top: 0; font-size: 1.2em; }
+        p { font-size: 0.9em; color: #555; margin-top:0; }
+    </style>
+</head>
+<body>
+    <div class="controls-column">
+        <h1>Manage Rectangles</h1>
+        <div class="control-group">
+            <label for="urn-input">Image URN:</label>
+            <input type="text" id="urn-input" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
+            <button id="load-urn-btn">Load Image</button>
+        </div>
+         <p>Use <strong>Option (Alt) + Click & Drag</strong> to draw rectangles on the image.</p>
+
+        <div id="rect-list-container" class="control-group">
+            <h2>Highlighted Rectangles:</h2>
+            <div id="rect-list">
+                <ul>
+                    <!-- Rectangles will be listed here -->
+                </ul>
+                <p id="no-rects-msg">No rectangles selected yet.</p>
+            </div>
+            <button id="clear-all-rects-btn" style="margin-top: 10px; background-color: #ffdddd;" disabled>Clear All Rectangles</button>
+        </div>
+    </div>
+
+    <div class="viewer-column">
+        <div id="viewer-container"></div>
+    </div>
+
+    <script src="hmt-iiif-lib.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let currentViewer = null;
+            const urnInput = document.getElementById('urn-input');
+            const loadBtn = document.getElementById('load-urn-btn');
+            const viewerContainerId = 'viewer-container';
+            const rectListUl = document.querySelector('#rect-list ul');
+            const noRectsMsg = document.getElementById('no-rects-msg');
+            const clearAllBtn = document.getElementById('clear-all-rects-btn');
+
+            function renderRectangleList(rectURNsString) {
+                rectListUl.innerHTML = ''; // Clear previous list
+                const urns = rectURNsString ? rectURNsString.split('\n').filter(urn => urn.trim() !== '') : [];
+
+                if (urns.length === 0) {
+                    noRectsMsg.style.display = 'block';
+                    clearAllBtn.disabled = true;
+                } else {
+                    noRectsMsg.style.display = 'none';
+                    clearAllBtn.disabled = false;
+                    urns.forEach(urn => {
+                        const li = document.createElement('li');
+                        
+                        const urnText = document.createElement('span');
+                        urnText.textContent = urn;
+                        li.appendChild(urnText);
+
+                        const removeBtn = document.createElement('button');
+                        removeBtn.textContent = 'Remove';
+                        removeBtn.className = 'remove-btn';
+                        removeBtn.onclick = function() {
+                            if (currentViewer) {
+                                currentViewer.removeRectangle(urn);
+                            }
+                        };
+                        li.appendChild(removeBtn);
+                        rectListUl.appendChild(li);
+                    });
+                }
+            }
+            
+            function loadViewer(urn) {
+                if (currentViewer && typeof currentViewer.clearAllRectangles === 'function') { // Check if previous viewer exists and has the method
+                    // Potentially clean up old viewer's global event listeners if they weren't instance-specific
+                    // For now, HMTImageViewer re-binds its own listeners.
+                }
+                renderRectangleList(""); // Clear UI list for new image
+
+                currentViewer = HMTImageLibrary.createViewer(
+                    viewerContainerId,
+                    urn,
+                    {
+                        onRectangleSelected: renderRectangleList
+                        // onQuery: (queriedUrns) => { console.log("Queried URNs:", queriedUrns); } // Optional
+                    }
+                );
+                 // Initialize list based on viewer's current state (should be empty)
+                if (currentViewer) {
+                    renderRectangleList(currentViewer.rectangles.map(r => r.urn).join('\n'));
+                }
+            }
+
+            loadBtn.addEventListener('click', function() {
+                const urn = urnInput.value.trim();
+                if (urn) {
+                    loadViewer(urn);
+                } else {
+                    alert("Please enter a valid URN.");
+                }
+            });
+
+            clearAllBtn.addEventListener('click', function() {
+                if (currentViewer && confirm("Are you sure you want to remove all rectangles?")) {
+                    currentViewer.clearAllRectangles(); 
+                }
+            });
+
+            // Load initial image
+            loadViewer(urnInput.value);
+        });
+    </script>
+</body>
+</html>
