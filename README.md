@@ -15,10 +15,6 @@ The javascript library in [hmt-iiif-lib.js](./hmt-iiif-lib.js) is designed to si
 
 
 
-
-
-
-
 ## Contents of this repository
 
 In addition to the library itself (`hmt-iiif-lib.js`) and the documentation (`apis.md`), this repository includes the following web apps illustrating the library's functionality.
@@ -26,7 +22,7 @@ In addition to the library itself (`hmt-iiif-lib.js`) and the documentation (`ap
 - `2.hmt-trimodal.html`: a simple web page illustrating the basic functionality of the interactive IIIF image viewer, including panning and zooming, drawing rectangles, and querying the image for rectangles that contain a point.
 - `3.hmt-embed.html`:  a simple web page illustrating how to get an IIIF image URL for a specific an image or region of an image, using the `HMTImageLibrary.getIIIFImageURL` function.
 - `4.hmt-adjacent.html`: a simple web page illustrating how to place multiple image viewers on a single page. 
-- `4.hmt-ict-deletable.html`: a simple web page illustrating how to interact with IIIF viewer to edit and delete ROI selections.
+- `9.hmt-ict-viz.html`: a simple web page illustrating how to interact with IIIF viewer to edit and delete ROI selections.
 
 
 
