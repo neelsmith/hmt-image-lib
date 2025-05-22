@@ -2,13 +2,14 @@
     'use strict';
 
     // --- URN Parsing and IIIF URL Construction ---
-    function parseHMTURN(baseUrnString) { // Expects a base URN (no fragment)
-        const parts = baseUrnString.split(':');
+    function parseHMTURN(urnString) {
+        // urnString here is expected to be the base URN, without fragment
+        const parts = urnString.split(':');
         if (parts.length !== 5 ) {
-            console.error('Invalid CITE2 URN format for base URN', baseUrnString);
+            console.error('Invalid CITE2 URN format for base URN', urnString);
             throw new Error('Invalid CITE2 URN format. Expected 5 components for the base URN.');
         }
-        // ... (rest of parseHMTURN remains the same as before)
+        
         const namespace = parts[2];
         const collectionComponent = parts[3];
         const objectId = parts[4];
@@ -24,8 +25,8 @@
         const imageIdentifier = `${objectId}.tif`;
         
         return {
-            baseURN: baseUrnString, 
-            originalURN: baseUrnString, 
+            baseURN: urnString, // The URN passed to this function is the base
+            originalURN: urnString, // Keep for consistency if needed, though context differs
             namespace: namespace,
             collectionComponent: collectionComponent,
             objectId: objectId,
@@ -41,14 +42,15 @@
         };
     }
 
+    // --- Helper for ROI Fragment Parsing (0-1 values) ---
     function _parseROIFragment(urnStringWithFragment) {
-        // ... (remains the same as before) ...
         const parts = urnStringWithFragment.split('@');
         if (parts.length > 1 && parts[1].length > 0) {
             const roiValues = parts[1].split(',').map(v => parseFloat(v.trim()));
             
             if (roiValues.length === 4 && 
                 roiValues.every(v => !isNaN(v) && v >= 0 && v <= 1)) {
+                // Check if width (roiValues[2]) and height (roiValues[3]) are positive
                 if (roiValues[2] > 0 && roiValues[3] > 0) {
                     return {
                         x: roiValues[0],
@@ -66,6 +68,7 @@
         return null;
     }
 
+    // --- HMTImageViewer Class ---
     class HMTImageViewer {
         constructor(element, urn, options = {}) {
             this.element = typeof element === 'string' ? document.getElementById(element) : element;
@@ -74,27 +77,34 @@
             }
             this.element.innerHTML = ''; 
 
+            // Use the new _parseROIFragment to separate base URN for parseHMTURN
             const baseUrnForViewer = urn.split('@')[0];
-            this.urnData = parseHMTURN(baseUrnForViewer); 
-            this.originalFullURN = urn; 
+            this.urnData = parseHMTURN(baseUrnForViewer); // This is the URN of the image itself
+            this.originalFullURN = urn; // Store the potentially fragmented URN for reference if needed
 
             this.options = options; 
+
             this.imageInfo = null; 
             this.canvas = null;
             this.ctx = null;
+            
             this.currentScale = 1.0; 
             this.panX = 0; 
             this.panY = 0; 
+
             this.rectangles = []; 
+
             this.isPanning = false;
             this.isSelectingRect = false;
             this.isOptionKeyDown = false;
             this.isShiftKeyDown = false;
             this.dragStartPos = null; 
             this.currentMousePos = null; 
+
             this.lastRenderedImageUrl = null; 
             this.isLoadingImage = false;
             this.loadedImage = null; 
+
             this.currentActualReqX = 0;
             this.currentActualReqY = 0;
 
@@ -102,7 +112,6 @@
         }
 
         async _init() {
-            // ... (remains the same) ...
             try {
                 await this._fetchInfoJson();
                 this._createCanvas();
@@ -117,7 +126,7 @@
             }
         }
 
-        async _fetchInfoJson() { /* ... same ... */ 
+        async _fetchInfoJson() {
             const infoUrl = this.urnData.getInfoJsonUrl();
             try {
                 const response = await fetch(infoUrl, { mode: 'cors' });
@@ -130,7 +139,8 @@
                 throw error; 
             }
         }
-        _createCanvas() { /* ... same ... */ 
+
+        _createCanvas() {
             this.canvas = document.createElement('canvas');
             this.canvas.width = this.element.clientWidth || 500; 
             this.canvas.height = this.element.clientHeight || 400; 
@@ -139,9 +149,10 @@
             }
             this.element.appendChild(this.canvas);
             this.ctx = this.canvas.getContext('2d');
-            this.canvas.style.cursor = 'grab';
+            this.canvas.style.cursor = 'grab'; // Default cursor
         }
-        _setupInitialView() { /* ... same ... */ 
+
+        _setupInitialView() {
             if (!this.imageInfo || !this.canvas) return;
             const W = this.imageInfo.width;
             const H = this.imageInfo.height;
@@ -158,33 +169,34 @@
             if (W * this.currentScale <= canvasW) this.panX = 0;
             if (H * this.currentScale <= canvasH) this.panY = 0;
         }
-        _addEventListeners() { /* ... same ... */ 
+        
+        _addEventListeners() {
             this.canvas.addEventListener('mousedown', this._handleMouseDown.bind(this));
             this.canvas.addEventListener('mousemove', this._handleMouseMove.bind(this));
             this.canvas.addEventListener('mouseup', this._handleMouseUp.bind(this));
             this.canvas.addEventListener('mouseleave', this._handleMouseLeave.bind(this));
             this.canvas.addEventListener('wheel', this._handleWheel.bind(this), { passive: false });
             
-            // It's better to add these to the specific canvas element if possible, 
-            // or manage them carefully if multiple viewers are on the page.
-            // For simplicity, window listeners are kept, but be mindful of multiple instances.
             window.addEventListener('keydown', this._handleKeyDown.bind(this));
             window.addEventListener('keyup', this._handleKeyUp.bind(this));
         }
-        _getMousePosOnCanvas(event) { /* ... same ... */ 
+
+        _getMousePosOnCanvas(event) {
             const rect = this.canvas.getBoundingClientRect();
             return {
                 x: event.clientX - rect.left,
                 y: event.clientY - rect.top
             };
         }
-        _canvasToImageCoordinates(canvasX, canvasY) { /* ... same ... */ 
+
+        _canvasToImageCoordinates(canvasX, canvasY) {
             if (!this.imageInfo) return { x: 0, y: 0 };
             const imageX = this.panX + (canvasX / this.currentScale);
             const imageY = this.panY + (canvasY / this.currentScale);
             return { x: imageX, y: imageY };
         }
-        _imageToPercentageCoordinates(imageX, imageY, imageWidth, imageHeight) { /* ... same ... */ 
+
+        _imageToPercentageCoordinates(imageX, imageY, imageWidth, imageHeight) {
             if (!this.imageInfo) return { x: 0, y: 0, w: 0, h: 0 };
             return {
                 x: imageX / this.imageInfo.width,
@@ -193,8 +205,9 @@
                 h: imageHeight / this.imageInfo.height
             };
         }
-        _percentageToCanvasCoordinates(pctX, pctY, pctW, pctH) { /* ... same ... */ 
-             if (!this.imageInfo) return { x: 0, y: 0, w: 0, h: 0 };
+
+        _percentageToCanvasCoordinates(pctX, pctY, pctW, pctH) {
+            if (!this.imageInfo) return { x: 0, y: 0, w: 0, h: 0 };
             const imgX = pctX * this.imageInfo.width;
             const imgY = pctY * this.imageInfo.height;
             const imgW = pctW * this.imageInfo.width;
@@ -207,13 +220,14 @@
                 h: imgH * this.currentScale
             };
         }
-        _handleMouseDown(event) { /* ... same ... */ 
+
+        _handleMouseDown(event) {
             event.preventDefault();
             this.dragStartPos = this._getMousePosOnCanvas(event);
             
             if (this.isOptionKeyDown) { 
                 this.isSelectingRect = true;
-                // this.canvas.style.cursor = 'crosshair'; // Set on keydown
+                this.canvas.style.cursor = 'crosshair'; // Should be on keydown ideally
             } else if (this.isShiftKeyDown) { 
                 const clickPosCanvas = this._getMousePosOnCanvas(event);
                 const clickPosImage = this._canvasToImageCoordinates(clickPosCanvas.x, clickPosCanvas.y);
@@ -236,7 +250,8 @@
                 this.canvas.style.cursor = 'grabbing';
             }
         }
-        _handleMouseMove(event) { /* ... same ... */ 
+
+        _handleMouseMove(event) {
             event.preventDefault();
             if (!this.dragStartPos) return;
 
@@ -251,13 +266,14 @@
                 
                 this.dragStartPos = this.currentMousePos; 
                 this._render();
-            } else if (this.isSelectingRect && this.isOptionKeyDown) { // Only draw temp rect if option key is still down
+            } else if (this.isSelectingRect) {
                 this._render(); 
             }
         }
-        _handleMouseUp(event) { /* ... same ... */ 
+
+        _handleMouseUp(event) {
             event.preventDefault();
-             if (!this.isOptionKeyDown && !this.isShiftKeyDown) { 
+             if (!this.isOptionKeyDown && !this.isShiftKeyDown) { // if not in special mode, reset to grab
                 this.canvas.style.cursor = 'grab';
             } else if (this.isOptionKeyDown) {
                 this.canvas.style.cursor = 'crosshair';
@@ -265,67 +281,65 @@
                 this.canvas.style.cursor = 'help';
             }
 
+
             if (this.isPanning) {
                 this.isPanning = false;
-            } else if (this.isSelectingRect && this.isOptionKeyDown) { // Ensure Option is still held to finalize
-                this.isSelectingRect = false; 
-                const rectEndPos = this._getMousePosOnCanvas(event);
-                if (!this.imageInfo || !this.dragStartPos) return; 
+            } else if (this.isSelectingRect) {
+                this.isSelectingRect = false; // Stop selection phase
+                // Only finalize if option key is still down, otherwise it might be a misclick
+                if (this.isOptionKeyDown) {
+                    const rectEndPos = this._getMousePosOnCanvas(event);
+                    if (!this.imageInfo || !this.dragStartPos) return; 
 
-                const startImgCoords = this._canvasToImageCoordinates(this.dragStartPos.x, this.dragStartPos.y);
-                const endImgCoords = this._canvasToImageCoordinates(rectEndPos.x, rectEndPos.y);
+                    const startImgCoords = this._canvasToImageCoordinates(this.dragStartPos.x, this.dragStartPos.y);
+                    const endImgCoords = this._canvasToImageCoordinates(rectEndPos.x, rectEndPos.y);
 
-                const imgRectX = Math.min(startImgCoords.x, endImgCoords.x);
-                const imgRectY = Math.min(startImgCoords.y, endImgCoords.y);
-                const imgRectW = Math.abs(startImgCoords.x - endImgCoords.x);
-                const imgRectH = Math.abs(startImgCoords.y - endImgCoords.y);
+                    const imgRectX = Math.min(startImgCoords.x, endImgCoords.x);
+                    const imgRectY = Math.min(startImgCoords.y, endImgCoords.y);
+                    const imgRectW = Math.abs(startImgCoords.x - endImgCoords.x);
+                    const imgRectH = Math.abs(startImgCoords.y - endImgCoords.y);
 
-                if (imgRectW > 1 && imgRectH > 1) { 
-                    const pctCoords = this._imageToPercentageCoordinates(imgRectX, imgRectY, imgRectW, imgRectH);
-                    pctCoords.x = Math.max(0, Math.min(1, pctCoords.x));
-                    pctCoords.y = Math.max(0, Math.min(1, pctCoords.y));
-                    pctCoords.w = Math.max(0, Math.min(1 - pctCoords.x, pctCoords.w));
-                    pctCoords.h = Math.max(0, Math.min(1 - pctCoords.y, pctCoords.h));
+                    if (imgRectW > 1 && imgRectH > 1) { 
+                        const pctCoords = this._imageToPercentageCoordinates(imgRectX, imgRectY, imgRectW, imgRectH);
+                        pctCoords.x = Math.max(0, Math.min(1, pctCoords.x));
+                        pctCoords.y = Math.max(0, Math.min(1, pctCoords.y));
+                        pctCoords.w = Math.max(0, Math.min(1 - pctCoords.x, pctCoords.w));
+                        pctCoords.h = Math.max(0, Math.min(1 - pctCoords.y, pctCoords.h));
 
-                    if (pctCoords.w > 0.0001 && pctCoords.h > 0.0001) { 
-                        const rectURN = `${this.urnData.baseURN}@${pctCoords.x.toFixed(4)},${pctCoords.y.toFixed(4)},${pctCoords.w.toFixed(4)},${pctCoords.h.toFixed(4)}`;
-                        this.rectangles.push({ urn: rectURN, ...pctCoords });
-                        
-                        if (this.options.onRectangleSelected) {
-                            const urnListString = this.rectangles.map(r => r.urn).join('\n');
-                            this.options.onRectangleSelected(urnListString);
+                        if (pctCoords.w > 0.0001 && pctCoords.h > 0.0001) { // Min percentage w/h
+                            const rectURN = `${this.urnData.baseURN}@${pctCoords.x.toFixed(4)},${pctCoords.y.toFixed(4)},${pctCoords.w.toFixed(4)},${pctCoords.h.toFixed(4)}`;
+                            this.rectangles.push({ urn: rectURN, ...pctCoords });
+                            
+                            if (this.options.onRectangleSelected) {
+                                const urnListString = this.rectangles.map(r => r.urn).join('\n');
+                                this.options.onRectangleSelected(urnListString);
+                            }
                         }
                     }
                 }
                 this._render(); 
-            } else if (this.isSelectingRect && !this.isOptionKeyDown) {
-                // Option key was released before mouse up, cancel selection
-                this.isSelectingRect = false;
-                this._render(); // Redraw to remove temporary rectangle
             }
             this.dragStartPos = null;
-            this.currentMousePos = null; 
+            this.currentMousePos = null; // Clear current mouse pos after drag/selection ends
         }
-        _handleMouseLeave(event) { /* ... same ... */ 
+        
+        _handleMouseLeave(event) {
             if (this.isPanning) {
                 this.isPanning = false;
                  if (!this.isOptionKeyDown && !this.isShiftKeyDown) this.canvas.style.cursor = 'grab';
             }
-            // If selecting and mouse leaves, keep selection active if Option key is still down
-            // but stop drawing the temporary rectangle from currentMousePos
-            if (this.isSelectingRect && this.isOptionKeyDown) {
-                 this.currentMousePos = null; // Stop drawing temp rect beyond canvas
-                 this._render(); // Redraw without the current mouse pos for temp rect
-            } else if (this.isSelectingRect && !this.isOptionKeyDown) {
-                // If option key was released and mouse leaves, cancel fully
-                this.isSelectingRect = false;
-                this.dragStartPos = null;
-                this.currentMousePos = null;
-                this._render();
+            if (this.isSelectingRect) {
+                this.isSelectingRect = false; 
+                // Do not finalize rectangle if mouse leaves.
+                // User might come back with Option key still pressed.
+                // Only clear temp drawing by re-rendering.
+                this.currentMousePos = null; // Stop drawing temp rect
+                this._render(); 
             }
-             // this.dragStartPos = null; // Don't clear dragStartPos if option is held, user might re-enter
+             this.dragStartPos = null; // Always clear drag start if mouse leaves
         }
-        _handleWheel(event) { /* ... same ... */ 
+
+        _handleWheel(event) {
             event.preventDefault();
             if (!this.imageInfo || !this.canvas) return;
 
@@ -354,39 +368,45 @@
             
             this._render();
         }
-        _handleKeyDown(event) { /* ... same ... */ 
+
+        _handleKeyDown(event) {
             if (event.key === 'Alt' || event.key === 'Option') {
                 this.isOptionKeyDown = true;
-                if (!this.isPanning && !this.isSelectingRect && this.canvas) this.canvas.style.cursor = 'crosshair';
+                if (!this.isPanning && !this.isSelectingRect) this.canvas.style.cursor = 'crosshair';
             } else if (event.key === 'Shift') {
                 this.isShiftKeyDown = true;
-                 if (!this.isPanning && !this.isSelectingRect && this.canvas) this.canvas.style.cursor = 'help';
+                 if (!this.isPanning && !this.isSelectingRect) this.canvas.style.cursor = 'help';
             }
         }
-        _handleKeyUp(event) { /* ... same ... */ 
+
+        _handleKeyUp(event) {
             if (event.key === 'Alt' || event.key === 'Option') {
                 this.isOptionKeyDown = false;
-                if (this.isSelectingRect) { // If alt is released during selection drawing (before mouse up)
-                    this.isSelectingRect = false; // Cancel the active selection process
-                    // Don't clear dragStartPos here, mouseup will handle it or mouseleave
-                    this.currentMousePos = null; // Stop drawing temp rect
-                    this._render(); // Redraw to remove temporary rectangle
-                }
-                if (!this.isShiftKeyDown && !this.isPanning && this.canvas) {
+                // If was selecting, stop. The temp rect will disappear on next render.
+                // If user releases Alt mid-drag, the selection should ideally cancel or complete.
+                // Current logic: completes if mouseup happened while alt was down.
+                // If mouseup happens *after* alt is up, it becomes a pan. This is tricky.
+                // For now, just reset cursor if not in another mode.
+                if (!this.isShiftKeyDown && !this.isPanning && !this.isSelectingRect) {
                      this.canvas.style.cursor = 'grab';
+                }
+                 if (this.isSelectingRect) { // If alt is released during selection, cancel it
+                    this.isSelectingRect = false;
+                    this.dragStartPos = null;
+                    this.currentMousePos = null;
+                    this._render(); // Redraw to remove temporary rectangle
                 }
             } else if (event.key === 'Shift') {
                 this.isShiftKeyDown = false;
-                 if (!this.isOptionKeyDown && !this.isPanning && this.canvas) {
+                 if (!this.isOptionKeyDown && !this.isPanning && !this.isSelectingRect) {
                     this.canvas.style.cursor = 'grab';
                 }
             }
         }
-        _render() { /* ... same, ensure temp rect logic considers isOptionKeyDown ... */
-            if (!this.imageInfo || !this.ctx) return;
-            // Allow render for temp rect drawing even if loading, but only if option key is down
-            if (this.isLoadingImage && !(this.isSelectingRect && this.isOptionKeyDown && this.currentMousePos)) return;
 
+        _render() {
+            if (!this.imageInfo || !this.ctx) return;
+            if (this.isLoadingImage && !this.isSelectingRect && !(this.isSelectingRect && this.currentMousePos)) return;
 
             const canvasW = this.canvas.width;
             const canvasH = this.canvas.height;
@@ -429,7 +449,7 @@
                 this.ctx.textAlign = 'center';
                 this.ctx.fillText("Zoomed out too far or invalid region", canvasW/2, canvasH/2);
                 this._drawRectangles(); 
-                if (this.isSelectingRect && this.isOptionKeyDown && this.dragStartPos && this.currentMousePos) this._drawTemporarySelectionRect();
+                if (this.isSelectingRect && this.dragStartPos && this.currentMousePos) this._drawTemporarySelectionRect();
                 return;
             }
             
@@ -437,28 +457,20 @@
             const sizeStr = `!${Math.ceil(canvasW)},${Math.ceil(canvasH)}`;
             const imageUrl = this.urnData.getFullIIIFUrl(regionStr, sizeStr);
 
-            // Condition for re-using loaded image: URL matches, image exists, AND
-            // (not currently selecting OR (selecting but option key is not down or no current mouse pos for temp rect))
-            const shouldSkipLoad = imageUrl === this.lastRenderedImageUrl && this.loadedImage && 
-                                   !(this.isSelectingRect && this.isOptionKeyDown && this.currentMousePos);
-
-            if (shouldSkipLoad) { 
+            if (imageUrl === this.lastRenderedImageUrl && this.loadedImage && !(this.isSelectingRect && this.currentMousePos)) { 
                 this.ctx.clearRect(0, 0, canvasW, canvasH);
                 this._drawLoadedImage(this.loadedImage); 
                 this._drawRectangles();
-                 // Draw temp rect if applicable (even if not reloading image)
-                if (this.isSelectingRect && this.isOptionKeyDown && this.dragStartPos && this.currentMousePos) {
-                    this._drawTemporarySelectionRect();
-                }
                 return;
             }
             
-            // If only temp rect drawing changes, but image is same
-            if (this.loadedImage && (this.isSelectingRect && this.isOptionKeyDown && this.currentMousePos) && imageUrl === this.lastRenderedImageUrl) {
+            if (this.loadedImage && (this.isSelectingRect && this.currentMousePos) && imageUrl === this.lastRenderedImageUrl) {
                 this.ctx.clearRect(0, 0, canvasW, canvasH);
                 this._drawLoadedImage(this.loadedImage);
                 this._drawRectangles();
-                this._drawTemporarySelectionRect(); // Assumes dragStartPos and currentMousePos are valid
+                if (this.dragStartPos && this.currentMousePos) { 
+                    this._drawTemporarySelectionRect();
+                }
                 return;
             }
 
@@ -476,7 +488,7 @@
                 this.ctx.clearRect(0, 0, canvasW, canvasH);
                 this._drawLoadedImage(img);
                 this._drawRectangles();
-                if (this.isSelectingRect && this.isOptionKeyDown && this.dragStartPos && this.currentMousePos) {
+                if (this.isSelectingRect && this.dragStartPos && this.currentMousePos) {
                     this._drawTemporarySelectionRect();
                 }
             };
@@ -490,7 +502,8 @@
             };
             img.src = imageUrl;
         }
-        _drawLoadedImage(img) { /* ... same ... */ 
+        
+        _drawLoadedImage(img) {
             if (!img || !this.imageInfo) return;
             const canvasW = this.canvas.width;
             const canvasH = this.canvas.height;
@@ -502,7 +515,8 @@
             this.ctx.fillRect(0, 0, canvasW, canvasH);
             this.ctx.drawImage(img, drawX, drawY, img.width, img.height);
         }
-        _drawRectangles() { /* ... same ... */ 
+
+        _drawRectangles() {
             if (!this.imageInfo) return; 
             this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.7)'; 
             this.ctx.lineWidth = 2;
@@ -511,8 +525,9 @@
                 this.ctx.strokeRect(canvasRect.x, canvasRect.y, canvasRect.w, canvasRect.h);
             });
         }
-        _drawTemporarySelectionRect() { /* ... same ... */ 
-            if (!this.dragStartPos || !this.currentMousePos || !this.isOptionKeyDown) return; // Only draw if option is down
+
+        _drawTemporarySelectionRect() {
+            if (!this.dragStartPos || !this.currentMousePos) return;
             this.ctx.fillStyle = 'rgba(0, 100, 255, 0.3)'; 
             this.ctx.strokeStyle = 'rgba(0, 100, 255, 0.8)';
             this.ctx.lineWidth = 1;
@@ -523,41 +538,11 @@
             this.ctx.fillRect(x, y, w, h);
             this.ctx.strokeRect(x, y, w, h);
         }
-
-        // --- NEW METHOD ---
-        removeRectangle(rectangleURNToRemove) {
-            const initialLength = this.rectangles.length;
-            this.rectangles = this.rectangles.filter(rect => rect.urn !== rectangleURNToRemove);
-
-            if (this.rectangles.length < initialLength) { // If a rectangle was actually removed
-                this._render(); // Re-render the canvas to remove the highlight
-
-                if (this.options.onRectangleSelected) {
-                    const urnListString = this.rectangles.map(r => r.urn).join('\n');
-                    this.options.onRectangleSelected(urnListString); // Notify listener
-                }
-                return true; // Indicate success
-            }
-            return false; // Indicate rectangle not found or not removed
-        }
-        
-        // Optional: Method to clear all rectangles
-        clearAllRectangles() {
-            if (this.rectangles.length > 0) {
-                this.rectangles = [];
-                this._render();
-                 if (this.options.onRectangleSelected) {
-                    this.options.onRectangleSelected(""); // Notify with empty list
-                }
-            }
-        }
-         // --- END NEW METHOD ---
     }
 
-
+    // --- Expose Library ---
     window.HMTImageLibrary = {
         createViewer: function(element, urn, options) {
-            // ... (remains the same) ...
             try {
                 return new HMTImageViewer(element, urn, options);
             } catch (error) {
@@ -569,18 +554,20 @@
                 return null;
             }
         },
+
         getIIIFImageUrl: function(urnString, outputWidth, outputHeight) {
-            // ... (remains the same) ...
             if (!urnString || typeof urnString !== 'string' || urnString.trim() === "") {
                 throw new Error("URN string is required and must be non-empty.");
             }
         
             const baseUrnForParsing = urnString.split('@')[0];
             const urnData = parseHMTURN(baseUrnForParsing); 
-            const roiFragment = _parseROIFragment(urnString); 
+            const roiFragment = _parseROIFragment(urnString); // Pass full URN to extract fragment
         
             let regionParameter = 'full';
             if (roiFragment) {
+                // Convert 0-1 percentages to 0-100 for IIIF pct:
+                // Use Math.round to get integers as per common IIIF practice and example.
                 const pctX = Math.round(roiFragment.x * 100);
                 const pctY = Math.round(roiFragment.y * 100);
                 const pctW = Math.round(roiFragment.w * 100);
@@ -588,7 +575,7 @@
                 regionParameter = `pct:${pctX},${pctY},${pctW},${pctH}`;
             }
         
-            let sizeParameter = 'full'; 
+            let sizeParameter = 'full'; // Default as per prompt "If no size is requested..."
             
             const w = parseInt(outputWidth, 10);
             const h = parseInt(outputHeight, 10);
@@ -597,15 +584,16 @@
             const hasHeight = !isNaN(h) && h > 0;
         
             if (hasWidth && hasHeight) {
-                sizeParameter = `!${w},${h}`; 
+                sizeParameter = `!${w},${h}`; // Fit within w,h maintaining aspect ratio
             } else if (hasWidth) {
-                sizeParameter = `${w},`;    
+                sizeParameter = `${w},`;    // Scale to width w, calculate height
             } else if (hasHeight) {
-                sizeParameter = `,${h}`;    
+                sizeParameter = `,${h}`;    // Scale to height h, calculate width
             }
+            // If neither hasWidth nor hasHeight, sizeParameter remains 'full'.
         
             const rotationParameter = '0';
-            const qualityParameter = 'default'; 
+            const qualityParameter = 'default'; // HMT server might prefer 'native' or 'default'
             const formatParameter = 'jpg';
         
             return `${urnData.iiifServer}${urnData.iiifImagePath}/${regionParameter}/${sizeParameter}/${rotationParameter}/${qualityParameter}.${formatParameter}`;

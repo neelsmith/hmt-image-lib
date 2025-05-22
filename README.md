@@ -2,7 +2,7 @@
 
 > *`hmt-iiif-lib.js` is a javascript library providing a lightweight, from-scratch IIIF image viewer tailored for citation by CITE2 URNs, along with utility functions for generating IIIF URLs. It is configured to work the Homer Multitext project's IIIF image server.*
 >
->*It is designed to be simple and easy to use, with a focus on functionality rather than extensive features. The viewer supports basic interactions like panning and zooming, as well as the ability to draw Regions of Interest (ROIs) on images, and interpret those selections as URNs.*
+>*It is designed to be simple and easy to use, with a focus on functionality rather than extensive features. The viewer supports basic interactions like panning and zooming, as well as the ability to draw Regions of Interest (ROIs) on images, interpret those selections as URNs, and query points on an image for overlap with defined ROIs.*
 
 
 ## Motivation
@@ -15,20 +15,14 @@ The javascript library in [hmt-iiif-lib.js](./hmt-iiif-lib.js) is designed to si
 
 
 
-
-
-
-
 ## Contents of this repository
 
 In addition to the library itself (`hmt-iiif-lib.js`) and the documentation (`apis.md`), this repository includes the following web apps illustrating the library's functionality.
 
-- `1.hmt-view-image-from-URN.html`: enter a URN and browse the image
-- `1.hmt-view-images.html`: example of how to place multiple image viewers on a single web page
-- `6.hmt-view-multi-rois.html`: enter multiple URNs with different ROIs for a given image, and view the image with ROIs highlighted
-- `9.hmt-ict.html`: draw ROIs on an image and get the CITE2 URN for the selected areas
-- `10.hmt-embed-image.html`: get an IIIF request for a URN reference, and embed the image in a web page
-
+- `2.hmt-trimodal.html`: a simple web page illustrating the basic functionality of the interactive IIIF image viewer, including panning and zooming, drawing rectangles, and querying the image for rectangles that contain a point.
+- `3.hmt-embed.html`:  a simple web page illustrating how to get an IIIF image URL for a specific an image or region of an image, using the `HMTImageLibrary.getIIIFImageURL` function.
+- `4.hmt-adjacent.html`: a simple web page illustrating how to place multiple image viewers on a single page. 
+- `9.hmt-ict-viz.html`: a simple web page illustrating how to interact with IIIF viewer to edit and delete ROI selections.
 
 
 
@@ -39,7 +33,7 @@ I built this library, but I don't (and won't) write javascript, so I gave in com
 
 ### How I build it
 
-If you're curious about how I built the library, the file `chat.txt` has a complete transcript of the conversation I had with gemini-2.5-pro. The `stages` directory has the functioning intermediate versions of the library. The numbers in the filenames correspond to the sequence of the library in the conversation, culminating in `hmt-iiif-lib-10.js`, which is the final version of the library, and identical to `hmt-iiif-lib.js` in this repository. 
+If you're curious about how I built the library, the file `chat.txt` has a complete transcript of the conversation I had with gemini-2.5-pro. The `stages` directory has the functioning intermediate versions of the library. The numbers in the filenames correspond to the sequence of the library in the conversation, culminating in `hmt-iiif-lib-4.js`, which is the final version of the library, and identical to `hmt-iiif-lib.js` in this repository. 
 
 
 ## License

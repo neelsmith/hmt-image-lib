@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Side-by-Side HMT Image Viewers</title>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            margin: 0;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .page-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .viewers-row {
+            display: flex;
+            flex-direction: row;
+            gap: 20px; /* Space between viewers */
+            width: 100%;
+        }
+        .viewer-wrapper {
+            flex: 1; /* Each viewer wrapper takes equal space */
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #f9f9f9;
+            min-width: 0; /* Important for flex items to shrink properly */
+        }
+        .viewer-container {
+            width: 100%;
+            height: 500px; /* Adjust height as needed */
+            border: 1px solid black;
+            background-color: #f0f0f0; /* Background for empty/loading state */
+            margin-top: 10px;
+        }
+        .controls {
+            margin-bottom: 10px;
+        }
+        .controls label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .controls input[type="text"] {
+            width: calc(100% - 80px); /* Adjust based on button width */
+            padding: 8px;
+            margin-right: 5px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+        .controls button {
+            padding: 8px 12px;
+            border: 1px solid #aaa;
+            background-color: #e7e7e7;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background-color: #d7d7d7;
+        }
+        h1 { text-align: center; font-size: 1.5em; margin-bottom: 15px; }
+        h2 { font-size: 1.1em; margin:0 0 10px 0; border-bottom: 1px solid #ddd; padding-bottom: 5px;}
+
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <h1>Side-by-Side HMT Image Viewers</h1>
+
+        <div class="viewers-row">
+            <!-- Static Viewer -->
+            <div class="viewer-wrapper">
+                <h2>View Venetus A, 12 recto</h2>
+                <p>URN: <code>urn:cite2:hmt:vaimg.2017a:VA012RN_0013</code></p>
+                <div id="static-viewer" class="viewer-container"></div>
+            </div>
+
+            <!-- Dynamic Viewer -->
+            <div class="viewer-wrapper">
+                <h2>View image for user-defined URN</h2>
+                <div class="controls">
+                    <label for="dynamic-urn-input">Enter Image URN:</label>
+                    <input type="text" id="dynamic-urn-input" value="urn:cite2:hmt:vaimg.2017a:VA013RN_0014">
+                    <button id="load-dynamic-btn">Load</button>
+                </div>
+                <div id="dynamic-viewer" class="viewer-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="hmt-iiif-lib.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize static viewer
+            const staticUrn = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013';
+            try {
+                HMTImageLibrary.createViewer('static-viewer', staticUrn);
+                console.log(`Static viewer initialized with URN: ${staticUrn}`);
+            } catch (error) {
+                console.error(`Error initializing static viewer for URN ${staticUrn}:`, error);
+                document.getElementById('static-viewer').innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            }
+
+            // Initialize and manage dynamic viewer
+            const dynamicUrnInput = document.getElementById('dynamic-urn-input');
+            const loadDynamicBtn = document.getElementById('load-dynamic-btn');
+            let dynamicViewerInstance = null;
+
+            function loadDynamicViewer() {
+                const urnToLoad = dynamicUrnInput.value.trim();
+                if (!urnToLoad) {
+                    alert("Please enter a URN for the dynamic viewer.");
+                    return;
+                }
+                
+                // The createViewer function clears the container, so no need to manually destroy old one
+                // if it's being replaced in the same container.
+                try {
+                    dynamicViewerInstance = HMTImageLibrary.createViewer('dynamic-viewer', urnToLoad);
+                    if (dynamicViewerInstance) {
+                        console.log(`Dynamic viewer loaded with URN: ${urnToLoad}`);
+                    } else {
+                         console.error(`Failed to create dynamic viewer for URN ${urnToLoad}, createViewer returned null.`);
+                         // The createViewer function should already put an error message in the container.
+                    }
+                } catch (error) {
+                    console.error(`Error initializing dynamic viewer for URN ${urnToLoad}:`, error);
+                    document.getElementById('dynamic-viewer').innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+                }
+            }
+
+            loadDynamicBtn.addEventListener('click', loadDynamicViewer);
+
+            // Load initial image for dynamic viewer
+            loadDynamicViewer();
+        });
+    </script>
+</body>
+</html>

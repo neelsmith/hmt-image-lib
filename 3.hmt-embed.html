@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test IIIF Image URL Generator</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        .container { margin-bottom: 20px; padding: 15px; border: 1px solid #eee; border-radius: 5px; background-color: #f9f9f9;}
+        label { display: inline-block; width: 120px; margin-bottom: 5px; font-weight: bold;}
+        input[type="text"], input[type="number"] { 
+            width: calc(100% - 130px); 
+            padding: 8px; 
+            margin-bottom: 10px; 
+            border: 1px solid #ccc; 
+            border-radius: 3px;
+            box-sizing: border-box;
+        }
+        button { 
+            padding: 10px 18px; 
+            background-color: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 3px; 
+            cursor: pointer; 
+            font-size: 1em;
+        }
+        button:hover { background-color: #0056b3; }
+        #generated-url-container, #image-display-container, #current-urn-container { margin-top: 20px; }
+        h1, h2 { color: #333; }
+        h1 { font-size: 1.8em; margin-bottom: 20px; }
+        h2 { font-size: 1.3em; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px;}
+        #generated-url, #current-urn-display { 
+            padding: 10px; 
+            background-color: #e9ecef; 
+            border: 1px solid #ced4da; 
+            border-radius: 3px;
+            word-break: break-all; 
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        #image-display img { 
+            max-width: 100%; 
+            height: auto;
+            display: block; 
+            border: 1px solid #ddd; 
+            margin-top: 5px;
+            background-color: #fff; /* In case of transparent parts or loading issues */
+        }
+        .error-message { color: red; font-weight: bold; }
+        small { color: #555; display: block; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>HMT Image library: embed static image in web page</h1>
+
+    <div class="container">
+        <div>
+            <label for="urn-input">Image URN:</label>
+            <input type="text" id="urn-input" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
+        </div>
+        <small>Example with ROI: <code>urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15</code></small>
+    </div>
+
+    <div class="container">
+        <div>
+            <label for="width-input">Width in pixels (opt.):</label>
+            <input type="number" id="width-input" placeholder="e.g., 800 (pixels)" value="200">
+        </div>
+        <div>
+            <label for="height-input">Height in pixels (opt.):</label>
+            <input type="number" id="height-input" placeholder="e.g., 600 (pixels)">
+        </div>
+    </div>
+
+    <button id="generate-btn">Generate URL & Display Image</button>
+
+    <div id="current-urn-container" class="container">
+        <h2>Using URN:</h2>
+        <div id="current-urn-display">Enter URN and click generate...</div>
+    </div>
+
+    <div id="generated-url-container" class="container">
+        <h2>Generated IIIF URL:</h2>
+        <div id="generated-url">URL will appear here...</div>
+    </div>
+
+    <div id="image-display-container" class="container">
+        <h2>Displayed Image:</h2>
+        <p>Click "Generate URN & Display Image" to embed image here.</p>
+        <div id="image-display">
+            <img id="result-image" src="#" alt="Generated image will appear here if URL is valid">
+        </div>
+    </div>
+
+    <script src="hmt-iiif-lib.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const urnInput = document.getElementById('urn-input');
+            const widthInput = document.getElementById('width-input');
+            const heightInput = document.getElementById('height-input');
+            const generateBtn = document.getElementById('generate-btn');
+            const currentUrnDiv = document.getElementById('current-urn-display');
+            const urlDiv = document.getElementById('generated-url');
+            const resultImage = document.getElementById('result-image');
+            const imageDisplayDiv = document.getElementById('image-display');
+
+
+            function generateAndDisplay() {
+                const urn = urnInput.value.trim();
+                const width = widthInput.value; 
+                const height = heightInput.value;
+
+                currentUrnDiv.textContent = urn || "No URN entered.";
+                urlDiv.innerHTML = ''; // Clear previous URL or error
+                resultImage.style.display = 'none'; // Hide image initially
+                resultImage.removeAttribute('src'); // Clear src to prevent showing old image on error
+                resultImage.alt = "Generated image will appear here if URL is valid";
+
+
+                if (!urn) {
+                    urlDiv.innerHTML = '<span class="error-message">Please enter an Image URN.</span>';
+                    currentUrnDiv.textContent = "Please enter an Image URN.";
+                    return;
+                }
+
+                try {
+                    const imageUrl = HMTImageLibrary.getIIIFImageUrl(urn, width, height);
+                    urlDiv.textContent = imageUrl;
+                    resultImage.src = imageUrl;
+                    resultImage.style.display = 'block'; 
+                    resultImage.alt = `Image for URN: ${urn}`;
+                } catch (error) {
+                    console.error("Error generating IIIF URL:", error);
+                    urlDiv.innerHTML = `<span class="error-message">Error: ${error.message}</span>`;
+                    resultImage.alt = "Error loading image: " + error.message;
+                }
+            }
+
+            generateBtn.addEventListener('click', generateAndDisplay);
+            
+            // Optional: generate for default values on page load
+            // generateAndDisplay(); 
+        });
+    </script>
+</body>
+</html>

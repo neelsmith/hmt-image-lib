@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HMT Image Viewer</title>
+    <style>
+        body { font-family: sans-serif; }
+        #interactive-viewer-container { 
+            width: 800px; 
+            height: 600px; 
+            border: 1px solid black; 
+            background-color: #f0f0f0; /* Background for empty state */
+        }
+        #controls { margin-bottom: 15px; }
+        #controls label, #controls input, #controls button { font-size: 1em; padding: 5px; }
+        #rect-list-container, #query-result-container { margin-top: 15px; padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9; }
+        #rect-list, #query-result { white-space: pre-wrap; font-family: monospace; }
+        h1 { font-size: 1.5em; }
+        h2 { font-size: 1.2em; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>HMT image viewer</h1>
+    <p>
+        Use Option (Alt) + Click & Drag to draw rectangles. <br/>
+        Use Shift + Click to query rectangles at a point.
+    </p>
+    
+    <div id="controls">
+        <label for="urn-input">Enter URN:</label>
+        <input type="text" id="urn-input" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013" style="width: 400px;">
+        <button id="load-urn-btn">Load Image</button>
+    </div>
+    
+    <div id="interactive-viewer-container"></div>
+    
+    <div id="rect-list-container">
+        <h2>Highlighted Rectangles (URN@x,y,w,h):</h2>
+        <div id="rect-list">No rectangles selected yet.</div>
+    </div>
+    
+    <div id="query-result-container">
+        <h2>Query Result (Shift + Click on image):</h2>
+        <div id="query-result">Shift + click on the image to query rectangles.</div>
+    </div>
+
+    <script src="hmt-iiif-lib.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let currentViewer = null;
+            const urnInput = document.getElementById('urn-input');
+            const loadBtn = document.getElementById('load-urn-btn');
+            const rectListDiv = document.getElementById('rect-list');
+            const queryResultDiv = document.getElementById('query-result');
+
+            function rectangleSelectedListener(rectURNsString) {
+                rectListDiv.textContent = rectURNsString || "No rectangles selected yet.";
+            }
+
+            function queryListener(matchingRectsURNs) {
+                if (!matchingRectsURNs || matchingRectsURNs.length === 0) {
+                    queryResultDiv.textContent = 'Clicked point is not within any rectangle.';
+                } else {
+                    queryResultDiv.textContent = 'Clicked point is within:\n' + matchingRectsURNs.join('\n');
+                }
+            }
+            
+            function loadViewer(urn) {
+                // The HMTImageViewer constructor clears the container, so no need to manually clear.
+                // A more robust solution would be to have a viewer.destroy() method.
+                // For now, creating a new viewer will replace the old one's canvas if the container is reused.
+                rectListDiv.textContent = 'No rectangles selected yet.'; // Reset UI for new image
+                queryResultDiv.textContent = 'Shift + click on the image to query rectangles.';
+
+                currentViewer = HMTImageLibrary.createViewer(
+                    'interactive-viewer-container',
+                    urn,
+                    {
+                        onRectangleSelected: rectangleSelectedListener,
+                        onQuery: queryListener
+                    }
+                );
+            }
+
+            loadBtn.addEventListener('click', function() {
+                const urn = urnInput.value.trim();
+                if (urn) {
+                    loadViewer(urn);
+                } else {
+                    alert("Please enter a valid URN.");
+                }
+            });
+
+            // Load initial image
+            loadViewer(urnInput.value);
+        });
+    </script>
+</body>
+</html>
