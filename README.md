@@ -2,7 +2,7 @@
 
 > *`hmt-iiif-lib.js` is a javascript library providing a lightweight, from-scratch IIIF image viewer tailored for citation by CITE2 URNs, along with utility functions for generating IIIF URLs. It is configured to work the Homer Multitext project's IIIF image server.*
 >
->*It is designed to be simple and easy to use, with a focus on functionality rather than extensive features. The viewer supports basic interactions like panning and zooming, as well as the ability to draw Regions of Interest (ROIs) on images, and interpret those selections as URNs.*
+>*It is designed to be simple and easy to use, with a focus on functionality rather than extensive features. The viewer supports basic interactions like panning and zooming, as well as the ability to draw Regions of Interest (ROIs) on images, interpret those selections as URNs, and query points on an image for overlap with defined ROIs.*
 
 
 ## Motivation
@@ -23,12 +23,7 @@ The javascript library in [hmt-iiif-lib.js](./hmt-iiif-lib.js) is designed to si
 
 In addition to the library itself (`hmt-iiif-lib.js`) and the documentation (`apis.md`), this repository includes the following web apps illustrating the library's functionality.
 
-- `1.hmt-view-image-from-URN.html`: enter a URN and browse the image
-- `1.hmt-view-images.html`: example of how to place multiple image viewers on a single web page
-- `6.hmt-view-multi-rois.html`: enter multiple URNs with different ROIs for a given image, and view the image with ROIs highlighted
-- `9.hmt-ict.html`: draw ROIs on an image and get the CITE2 URN for the selected areas
-- `10.hmt-embed-image.html`: get an IIIF request for a URN reference, and embed the image in a web page
-
+- TBA
 
 
 
