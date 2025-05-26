@@ -1,5 +1,5 @@
 
-# HMT Image Library API Documentation
+# HMT Image Library API Documentation: version 2.0.0
 
 ## Overview
 
