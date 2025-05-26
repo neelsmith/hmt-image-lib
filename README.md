@@ -1,4 +1,4 @@
-# A vibe-coded javascript library for working with HMT images and IIIF
+# A vibe-coded javascript library for working with HMT images and IIIF: : version 2.0.0
 
 > *`hmt-iiif-lib.js` is a javascript library providing a lightweight, from-scratch IIIF image viewer tailored for citation by CITE2 URNs, along with utility functions for generating IIIF URLs. It is configured to work the Homer Multitext project's IIIF image server.*
 >
