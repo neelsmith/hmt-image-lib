@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HMT Image Lib - Multiple Viewers Test</title>
+    <script src="hmt-iiif-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .viewer-container {
+            width: 600px;
+            height: 400px;
+            border: 1px solid #ccc;
+            margin-bottom: 20px;
+            overflow: hidden; /* Important if canvas tries to be bigger */
+        }
+        h2 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1>HMT Image Library - Multiple Viewers Test</h1>
+
+    <p>Test zoom (mouse wheel) and pan (click and drag) on both images.</p>
+
+    <h2>Viewer 1: urn:cite2:hmt:vaimg.2017a:VA012RN_0013</h2>
+    <div id="viewer1" class="viewer-container"></div>
+
+    <h2>Viewer 2: urn:cite2:hmt:vaimg.2017a:VA013RN_0014</h2>
+    <div id="viewer2" class.viewer-container"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const viewer1 = HMTImageLib.createViewer('viewer1', 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013');
+            const viewer2 = HMTImageLib.createViewer('viewer2', 'urn:cite2:hmt:vaimg.2017a:VA013RN_0014');
+        });
+    </script>
+</body>
+</html>

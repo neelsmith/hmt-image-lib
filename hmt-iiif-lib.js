@@ -1,607 +1,528 @@
-(function(window) {
+// hmt-image-lib.js
+(function (global) {
     'use strict';
 
-    // --- URN Parsing and IIIF URL Construction ---
-    function parseHMTURN(baseUrnString) { // Expects a base URN (no fragment)
-        const parts = baseUrnString.split(':');
-        if (parts.length !== 5 ) {
-            console.error('Invalid CITE2 URN format for base URN', baseUrnString);
-            throw new Error('Invalid CITE2 URN format. Expected 5 components for the base URN.');
+    const IIIF_PROTOCOL = 'http';
+    const IIIF_SERVER = 'www.homermultitext.org/iipsrv?IIIF=';
+    const IIIF_BASE_PATH = '/project/homer/pyramidal/deepzoom';
+
+    // --- Helper function to parse URN ---
+    function parseURN(urnString) {
+        if (!urnString || typeof urnString !== 'string') {
+            console.error('Invalid URN string:', urnString);
+            return null;
+        }
+
+        const parts = urnString.split(':');
+        if (parts.length < 5) {
+            console.error('URN string too short:', urnString);
+            return null;
+        }
+
+        const baseUrnParts = parts.slice(0, 5);
+        let roi = null;
+        const objectIdFull = parts[4];
+        let objectId = objectIdFull;
+
+        if (objectIdFull.includes('@')) {
+            const objectIdAndRoi = objectIdFull.split('@');
+            objectId = objectIdAndRoi[0];
+            baseUrnParts[4] = objectId; 
+
+            if (objectIdAndRoi.length > 1 && objectIdAndRoi[1]) {
+                const roiParts = objectIdAndRoi[1].split(',');
+                if (roiParts.length === 4) {
+                    roi = {
+                        x: parseFloat(roiParts[0]),
+                        y: parseFloat(roiParts[1]),
+                        w: parseFloat(roiParts[2]),
+                        h: parseFloat(roiParts[3]),
+                    };
+                } else {
+                    console.warn('Invalid ROI format in URN:', urnString);
+                }
+            }
         }
         
         const namespace = parts[2];
-        const collectionComponent = parts[3];
-        const objectId = parts[4];
-
-        const collectionParts = collectionComponent.split('.');
-        if (collectionParts.length !== 2) {
-            console.error('Invalid collection component format in URN', collectionComponent);
-            throw new Error('Invalid collection component format in URN. Expected two parts separated by a period.');
+        const collectionVersion = parts[3];
+        const collectionParts = collectionVersion.split('.');
+        
+        if (collectionParts.length < 2) {
+            console.error('Invalid collection component in URN:', urnString);
+            return null;
         }
-        
-        const iiifServer = 'http://www.homermultitext.org/iipsrv?IIIF=';
-        const imagePathPrefix = `/project/homer/pyramidal/deepzoom/${namespace}/${collectionParts[0]}/${collectionParts[1]}`;
-        const imageIdentifier = `${objectId}.tif`;
-        
+
         return {
-            baseURN: baseUrnString, 
-            originalURN: baseUrnString, 
+            baseUrn: baseUrnParts.join(':'),
             namespace: namespace,
-            collectionComponent: collectionComponent,
+            collectionPart1: collectionParts[0],
+            collectionPart2: collectionParts[1],
             objectId: objectId,
-            collectionParts: collectionParts,
-            iiifServer: iiifServer,
-            iiifImagePath: `${imagePathPrefix}/${imageIdentifier}`,
-            getFullIIIFUrl: function(region = 'full', size = 'max', rotation = '0', quality = 'default', format = 'jpg') {
-                return `${this.iiifServer}${this.iiifImagePath}/${region}/${size}/${rotation}/${quality}.${format}`;
-            },
-            getInfoJsonUrl: function() {
-                return `${this.iiifServer}${this.iiifImagePath}/info.json`;
-            }
+            roi: roi
         };
     }
 
-    function _parseROIFragment(urnStringWithFragment) {
-        const parts = urnStringWithFragment.split('@');
-        if (parts.length > 1 && parts[1].length > 0) {
-            const roiValues = parts[1].split(',').map(v => parseFloat(v.trim()));
-            
-            if (roiValues.length === 4 && 
-                roiValues.every(v => !isNaN(v) && v >= 0 && v <= 1)) {
-                if (roiValues[2] > 0 && roiValues[3] > 0) { // Width and Height must be positive
-                    return {
-                        x: roiValues[0],
-                        y: roiValues[1],
-                        w: roiValues[2],
-                        h: roiValues[3]
-                    };
-                } else {
-                     console.warn("ROI fragment width and height must be positive:", parts[1]);
-                }
-            } else {
-                console.warn("Invalid ROI fragment in URN (must be 4 comma-separated numbers between 0 and 1, e.g., @0.1,0.1,0.5,0.5):", parts[1]);
-            }
+    // --- getIIIFImageUrl ---
+    function getIIIFImageUrl(urnString, options = {}) {
+        const parsedUrn = parseURN(urnString);
+        if (!parsedUrn) return null;
+
+        const { namespace, collectionPart1, collectionPart2, objectId, roi } = parsedUrn;
+
+        const iiifPrefix = `${IIIF_BASE_PATH}/${namespace}/${collectionPart1}/${collectionPart2}`;
+        const imageIdentifier = `${objectId}.tif`;
+
+        let regionParam = 'full';
+        if (roi) {
+            regionParam = `pct:${roi.x * 100},${roi.y * 100},${roi.w * 100},${roi.h * 100}`;
+        } else if (options.region) {
+             regionParam = options.region;
         }
-        return null;
+
+        let sizeParam = 'full';
+        if (options.width && options.height) {
+            if (options.width >= options.height) {
+                sizeParam = `${Math.round(options.width)},`;
+            } else {
+                sizeParam = `,${Math.round(options.height)}`;
+            }
+        } else if (options.width) {
+            sizeParam = `${Math.round(options.width)},`;
+        } else if (options.height) {
+            sizeParam = `,${Math.round(options.height)}`;
+        } else if (options.size) {
+            sizeParam = options.size;
+        }
+
+        const rotationParam = '0';
+        const qualityParam = 'default';
+        const formatParam = 'jpg';
+
+        return `${IIIF_PROTOCOL}://${IIIF_SERVER}${iiifPrefix}/${imageIdentifier}/${regionParam}/${sizeParam}/${rotationParam}/${qualityParam}.${formatParam}`;
     }
 
+    // --- HMTImageViewer Class ---
     class HMTImageViewer {
-        constructor(element, urn, options = {}) {
-            this.element = typeof element === 'string' ? document.getElementById(element) : element;
-            if (!this.element) {
-                throw new Error(`Element ${element} not found.`);
+        constructor(elementId, urnString, viewerOptions = {}) {
+            this.container = document.getElementById(elementId);
+            if (!this.container) {
+                throw new Error(`Element with ID '${elementId}' not found.`);
             }
-            this.element.innerHTML = ''; 
+            this.container.innerHTML = '';
 
-            const baseUrnForViewer = urn.split('@')[0];
-            this.urnData = parseHMTURN(baseUrnForViewer); 
-            this.originalFullURN = urn; 
+            this.baseUrnParsed = parseURN(urnString);
+            if (!this.baseUrnParsed) {
+                throw new Error(`Invalid URN for viewer: ${urnString}`);
+            }
+            this.baseUrn = this.baseUrnParsed.baseUrn;
 
-            this.options = options; 
-            this.imageInfo = null; 
-            this.canvas = null;
-            this.ctx = null;
-            this.currentScale = 1.0; 
-            this.panX = 0; 
-            this.panY = 0; 
-            this.rectangles = []; // Stores { urn, x, y, w, h (percentages), fillColor }
+            this.rectangleSelectedListener = viewerOptions.rectangleSelectedListener || function() {};
+            this.queryListener = viewerOptions.queryListener || function() {};
+
+            this.canvas = document.createElement('canvas');
+            this.ctx = this.canvas.getContext('2d');
+            this.container.appendChild(this.canvas);
+            this._updateCursor(); // Set initial cursor
+
+            this.originalWidth = 0;
+            this.originalHeight = 0;
+            this.currentImage = new Image();
+            this.currentImage.crossOrigin = "Anonymous";
+
+            this.rectangles = []; 
+
+            this.currentScale = 1.0;
+            this.viewOriginX = 0;   
+            this.viewOriginY = 0;   
+
             this.isPanning = false;
-            this.isSelectingRect = false;
-            this.isOptionKeyDown = false;
-            this.isShiftKeyDown = false;
-            this.dragStartPos = null; 
-            this.currentMousePos = null; 
-            this.lastRenderedImageUrl = null; 
-            this.isLoadingImage = false;
-            this.loadedImage = null; 
-            this.currentActualReqX = 0;
-            this.currentActualReqY = 0;
+            this.isSelecting = false;
+            this.lastMouseX = 0;
+            this.lastMouseY = 0;
+            this.selectionStartX = 0; 
+            this.selectionStartY = 0; 
+            this.currentSelectionRect = null;
 
-            this._init();
+            this._initEventListeners();
         }
 
-        async _init() {
+        async init() {
             try {
-                await this._fetchInfoJson();
-                this._createCanvas();
-                this._setupInitialView();
-                this._addEventListeners();
-                this._render(); 
+                const infoUrl = `${IIIF_PROTOCOL}://${IIIF_SERVER}${IIIF_BASE_PATH}/${this.baseUrnParsed.namespace}/${this.baseUrnParsed.collectionPart1}/${this.baseUrnParsed.collectionPart2}/${this.baseUrnParsed.objectId}.tif/info.json`;
+                const response = await fetch(infoUrl, { mode: 'cors' });
+                if (!response.ok) throw new Error(`Failed to fetch image info: ${response.statusText}`);
+                const infoData = await response.json();
+                this.originalWidth = infoData.width;
+                this.originalHeight = infoData.height;
+
+                this.resizeCanvasToContainer();
+                this.fitImageToCanvas(); 
+                this.loadCurrentImage();
             } catch (error) {
                 console.error("Error initializing viewer:", error);
-                if (this.element) {
-                    this.element.innerHTML = `<p style="color:red;">Error loading image: ${error.message}</p><p>URN: ${this.originalFullURN}</p><p>Info URL: ${this.urnData ? this.urnData.getInfoJsonUrl() : 'N/A'}</p>`;
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.fillText(`Error: ${error.message}`, 10, 50);
+            }
+        }
+        
+        resizeCanvasToContainer() {
+            this.canvas.width = this.container.clientWidth;
+            this.canvas.height = this.container.clientHeight;
+        }
+
+        fitImageToCanvas(mode = 'width') {
+            if (this.originalWidth === 0 || this.originalHeight === 0) return;
+            const canvasAspect = this.canvas.width / this.canvas.height;
+            const imageAspect = this.originalWidth / this.originalHeight;
+
+            if (mode === 'contain') {
+                if (imageAspect > canvasAspect) {
+                    this.currentScale = this.canvas.width / this.originalWidth;
+                } else {
+                    this.currentScale = this.canvas.height / this.originalHeight;
                 }
+            } else if (mode === 'height') {
+                 this.currentScale = this.canvas.height / this.originalHeight;
+            } else {
+                 this.currentScale = this.canvas.width / this.originalWidth;
             }
-        }
-
-        async _fetchInfoJson() { 
-            const infoUrl = this.urnData.getInfoJsonUrl();
-            try {
-                const response = await fetch(infoUrl, { mode: 'cors' });
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch info.json (status ${response.status}) from ${infoUrl}`);
-                }
-                this.imageInfo = await response.json();
-            } catch (error) {
-                console.error(`Error fetching or parsing info.json from ${infoUrl}:`, error);
-                throw error; 
-            }
-        }
-        _createCanvas() { 
-            this.canvas = document.createElement('canvas');
-            this.canvas.width = this.element.clientWidth || 500; 
-            this.canvas.height = this.element.clientHeight || 400; 
-            if(this.element.clientWidth === 0 || this.element.clientHeight === 0) {
-                console.warn("Viewer container has zero width or height. Canvas may not be visible or sized correctly.");
-            }
-            this.element.appendChild(this.canvas);
-            this.ctx = this.canvas.getContext('2d');
-            this.canvas.style.cursor = 'grab';
-        }
-        _setupInitialView() { 
-            if (!this.imageInfo || !this.canvas) return;
-            const W = this.imageInfo.width;
-            const H = this.imageInfo.height;
-            const canvasW = this.canvas.width;
-            const canvasH = this.canvas.height;
-
-            const scaleX = canvasW / W;
-            const scaleY = canvasH / H;
-            this.currentScale = Math.min(scaleX, scaleY);
-
-            this.panX = (W - (canvasW / this.currentScale)) / 2;
-            this.panY = (H - (canvasH / this.currentScale)) / 2;
             
-            if (W * this.currentScale <= canvasW) this.panX = 0;
-            if (H * this.currentScale <= canvasH) this.panY = 0;
+            const displayWidth = this.originalWidth * this.currentScale;
+            const displayHeight = this.originalHeight * this.currentScale;
+            this.viewOriginX = (this.canvas.width - displayWidth) / 2;
+            this.viewOriginY = (this.canvas.height - displayHeight) / 2;
         }
-        _addEventListeners() { 
-            this.canvas.addEventListener('mousedown', this._handleMouseDown.bind(this));
-            this.canvas.addEventListener('mousemove', this._handleMouseMove.bind(this));
-            this.canvas.addEventListener('mouseup', this._handleMouseUp.bind(this));
-            this.canvas.addEventListener('mouseleave', this._handleMouseLeave.bind(this));
-            this.canvas.addEventListener('wheel', this._handleWheel.bind(this), { passive: false });
+
+        loadCurrentImage() {
+            if (this.originalWidth === 0 || this.originalHeight === 0) return;
             
-            window.addEventListener('keydown', this._handleKeyDown.bind(this));
-            window.addEventListener('keyup', this._handleKeyUp.bind(this));
+            let regionX = -this.viewOriginX / this.currentScale;
+            let regionY = -this.viewOriginY / this.currentScale;
+            let regionW = this.canvas.width / this.currentScale;
+            let regionH = this.canvas.height / this.currentScale;
+            
+            regionX = Math.max(0, regionX);
+            regionY = Math.max(0, regionY);
+            regionW = Math.min(this.originalWidth - regionX, regionW);
+            regionH = Math.min(this.originalHeight - regionY, regionH);
+            
+            if (regionW <=0 || regionH <= 0) {
+                this.redraw(); 
+                return;
+            }
+            
+            const iiifRegionParam = `${Math.round(regionX)},${Math.round(regionY)},${Math.round(regionW)},${Math.round(regionH)}`;
+            const iiifSizeParam = `!${this.canvas.width},${this.canvas.height}`; 
+
+            const imageUrl = getIIIFImageUrl(this.baseUrn, {
+                region: iiifRegionParam,
+                size: iiifSizeParam
+            });
+
+            if (!imageUrl) {
+                console.error("Could not generate image URL for viewer display.");
+                return;
+            }
+            
+            this.currentImage.onload = () => {
+                this.redraw();
+            };
+            this.currentImage.onerror = (e) => {
+                console.error("Error loading image:", imageUrl, e);
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillText(`Error loading image.`, 10, 50);
+            };
+            this.currentImage.src = imageUrl;
         }
-        _getMousePosOnCanvas(event) { 
+
+        redraw() {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            if (this.currentImage.complete && this.currentImage.naturalWidth > 0) {
+                 let drawW = this.currentImage.width;
+                 let drawH = this.currentImage.height;
+                 let drawX = (this.canvas.width - drawW) / 2;
+                 let drawY = (this.canvas.height - drawH) / 2;
+                 this.ctx.drawImage(this.currentImage, drawX, drawY, drawW, drawH);
+            }
+
+            this.rectangles.forEach(rect => {
+                this.ctx.fillStyle = rect.color;
+                const canvasRectX = this.viewOriginX + (rect.x * this.originalWidth * this.currentScale);
+                const canvasRectY = this.viewOriginY + (rect.y * this.originalHeight * this.currentScale);
+                const canvasRectW = rect.w * this.originalWidth * this.currentScale;
+                const canvasRectH = rect.h * this.originalHeight * this.currentScale;
+                this.ctx.fillRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+            });
+
+            if (this.isSelecting && this.currentSelectionRect) {
+                this.ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
+                this.ctx.strokeStyle = 'rgba(0, 100, 255, 0.7)';
+                this.ctx.lineWidth = 1;
+                const cs = this.currentSelectionRect;
+                const canvasRectX = this.viewOriginX + (cs.x * this.originalWidth * this.currentScale);
+                const canvasRectY = this.viewOriginY + (cs.y * this.originalHeight * this.currentScale);
+                const canvasRectW = cs.w * this.originalWidth * this.currentScale;
+                const canvasRectH = cs.h * this.originalHeight * this.currentScale;
+                this.ctx.fillRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+                this.ctx.strokeRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+            }
+        }
+
+        _getMousePosOnCanvas(event) {
             const rect = this.canvas.getBoundingClientRect();
             return {
                 x: event.clientX - rect.left,
                 y: event.clientY - rect.top
             };
         }
-        _canvasToImageCoordinates(canvasX, canvasY) { 
-            if (!this.imageInfo) return { x: 0, y: 0 };
-            const imageX = this.panX + (canvasX / this.currentScale);
-            const imageY = this.panY + (canvasY / this.currentScale);
-            return { x: imageX, y: imageY };
-        }
-        _imageToPercentageCoordinates(imageX, imageY, imageWidth, imageHeight) { 
-            if (!this.imageInfo) return { x: 0, y: 0, w: 0, h: 0 };
+
+        _canvasToImagePercentCoords(canvasX, canvasY) {
+            if (this.originalWidth === 0 || this.originalHeight === 0 || this.currentScale === 0) {
+                return { x:0, y:0 };
+            }
+            const imagePxX = (canvasX - this.viewOriginX) / this.currentScale;
+            const imagePxY = (canvasY - this.viewOriginY) / this.currentScale;
             return {
-                x: imageX / this.imageInfo.width,
-                y: imageY / this.imageInfo.height,
-                w: imageWidth / this.imageInfo.width,
-                h: imageHeight / this.imageInfo.height
+                x: imagePxX / this.originalWidth,
+                y: imagePxY / this.originalHeight
             };
-        }
-        _percentageToCanvasCoordinates(pctX, pctY, pctW, pctH) { 
-            if (!this.imageInfo) return { x: 0, y: 0, w: 0, h: 0 };
-            const imgX = pctX * this.imageInfo.width;
-            const imgY = pctY * this.imageInfo.height;
-            const imgW = pctW * this.imageInfo.width;
-            const imgH = pctH * this.imageInfo.height;
-
-            return {
-                x: (imgX - this.panX) * this.currentScale,
-                y: (imgY - this.panY) * this.currentScale,
-                w: imgW * this.currentScale,
-                h: imgH * this.currentScale
-            };
-        }
-
-        _getRandomFillColor() {
-            const r = Math.floor(Math.random() * 256);
-            const g = Math.floor(Math.random() * 256);
-            const b = Math.floor(Math.random() * 256);
-            return `rgba(${r},${g},${b},0.5)`; // 0.5 opacity
-        }
-
-        _handleMouseDown(event) { 
-            event.preventDefault();
-            this.dragStartPos = this._getMousePosOnCanvas(event);
-            
-            if (this.isOptionKeyDown) { 
-                this.isSelectingRect = true;
-            } else if (this.isShiftKeyDown) { 
-                const clickPosCanvas = this._getMousePosOnCanvas(event);
-                const clickPosImage = this._canvasToImageCoordinates(clickPosCanvas.x, clickPosCanvas.y);
-                if (!this.imageInfo) return; 
-                const clickPosPct = {
-                    x: clickPosImage.x / this.imageInfo.width,
-                    y: clickPosImage.y / this.imageInfo.height
-                };
-
-                const matchingRects = this.rectangles.filter(rect => 
-                    clickPosPct.x >= rect.x && clickPosPct.x <= rect.x + rect.w &&
-                    clickPosPct.y >= rect.y && clickPosPct.y <= rect.y + rect.h
-                );
-                
-                if (this.options.onQuery) {
-                    this.options.onQuery(matchingRects.map(r => r.urn));
-                }
-            } else { 
-                this.isPanning = true;
-                if (this.canvas) this.canvas.style.cursor = 'grabbing';
-            }
-        }
-        _handleMouseMove(event) { 
-            event.preventDefault();
-            if (!this.dragStartPos) return;
-
-            this.currentMousePos = this._getMousePosOnCanvas(event);
-
-            if (this.isPanning) {
-                const dx = (this.currentMousePos.x - this.dragStartPos.x) / this.currentScale;
-                const dy = (this.currentMousePos.y - this.dragStartPos.y) / this.currentScale;
-                
-                this.panX -= dx;
-                this.panY -= dy;
-                
-                this.dragStartPos = this.currentMousePos; 
-                this._render();
-            } else if (this.isSelectingRect && this.isOptionKeyDown) { 
-                this._render(); 
-            }
-        }
-        _handleMouseUp(event) { 
-            event.preventDefault();
-            if (this.canvas) { // Check if canvas exists
-                if (!this.isOptionKeyDown && !this.isShiftKeyDown) { 
-                    this.canvas.style.cursor = 'grab';
-                } else if (this.isOptionKeyDown) {
-                    this.canvas.style.cursor = 'crosshair';
-                } else if (this.isShiftKeyDown) {
-                    this.canvas.style.cursor = 'help';
-                }
-            }
-
-
-            if (this.isPanning) {
-                this.isPanning = false;
-            } else if (this.isSelectingRect && this.isOptionKeyDown) { 
-                this.isSelectingRect = false; 
-                const rectEndPos = this._getMousePosOnCanvas(event);
-                if (!this.imageInfo || !this.dragStartPos) return; 
-
-                const startImgCoords = this._canvasToImageCoordinates(this.dragStartPos.x, this.dragStartPos.y);
-                const endImgCoords = this._canvasToImageCoordinates(rectEndPos.x, rectEndPos.y);
-
-                const imgRectX = Math.min(startImgCoords.x, endImgCoords.x);
-                const imgRectY = Math.min(startImgCoords.y, endImgCoords.y);
-                const imgRectW = Math.abs(startImgCoords.x - endImgCoords.x);
-                const imgRectH = Math.abs(startImgCoords.y - endImgCoords.y);
-
-                if (imgRectW > 1 && imgRectH > 1) { 
-                    const pctCoords = this._imageToPercentageCoordinates(imgRectX, imgRectY, imgRectW, imgRectH);
-                    pctCoords.x = Math.max(0, Math.min(1, pctCoords.x));
-                    pctCoords.y = Math.max(0, Math.min(1, pctCoords.y));
-                    pctCoords.w = Math.max(0, Math.min(1 - pctCoords.x, pctCoords.w));
-                    pctCoords.h = Math.max(0, Math.min(1 - pctCoords.y, pctCoords.h));
-
-                    if (pctCoords.w > 0.0001 && pctCoords.h > 0.0001) { 
-                        const rectURN = `${this.urnData.baseURN}@${pctCoords.x.toFixed(4)},${pctCoords.y.toFixed(4)},${pctCoords.w.toFixed(4)},${pctCoords.h.toFixed(4)}`;
-                        const fillColor = this._getRandomFillColor();
-                        this.rectangles.push({ urn: rectURN, ...pctCoords, fillColor: fillColor });
-                        
-                        if (this.options.onRectangleSelected) {
-                            const urnListString = this.rectangles.map(r => r.urn).join('\n');
-                            this.options.onRectangleSelected(urnListString);
-                        }
-                    }
-                }
-                this._render(); 
-            } else if (this.isSelectingRect && !this.isOptionKeyDown) { // Option key released before mouse up
-                this.isSelectingRect = false;
-                this._render(); 
-            }
-            this.dragStartPos = null;
-            this.currentMousePos = null; 
-        }
-        _handleMouseLeave(event) { 
-            if (this.isPanning) {
-                this.isPanning = false;
-                if (this.canvas && !this.isOptionKeyDown && !this.isShiftKeyDown) this.canvas.style.cursor = 'grab';
-            }
-            if (this.isSelectingRect && this.isOptionKeyDown) {
-                this.currentMousePos = null; 
-                this._render(); 
-            } else if (this.isSelectingRect && !this.isOptionKeyDown) {
-                this.isSelectingRect = false;
-                this.dragStartPos = null;
-                this.currentMousePos = null;
-                this._render();
-            }
-        }
-        _handleWheel(event) { 
-            event.preventDefault();
-            if (!this.imageInfo || !this.canvas) return;
-
-            const zoomFactor = 1.1;
-            const mousePosCanvas = this._getMousePosOnCanvas(event);
-            
-            const imgPointX = this.panX + mousePosCanvas.x / this.currentScale;
-            const imgPointY = this.panY + mousePosCanvas.y / this.currentScale;
-
-            if (event.deltaY < 0) { 
-                this.currentScale *= zoomFactor;
-            } else { 
-                this.currentScale /= zoomFactor;
-            }
-            
-            const minScaleForViewX = this.canvas.width / this.imageInfo.width;
-            const minScaleForViewY = this.canvas.height / this.imageInfo.height;
-            const minPracticalScale = Math.min(minScaleForViewX, minScaleForViewY) / 4; 
-            const maxPracticalScale = 10; 
-
-            this.currentScale = Math.max(minPracticalScale, this.currentScale);
-            this.currentScale = Math.min(maxPracticalScale, this.currentScale);
-
-            this.panX = imgPointX - (mousePosCanvas.x / this.currentScale);
-            this.panY = imgPointY - (mousePosCanvas.y / this.currentScale);
-            
-            this._render();
-        }
-        _handleKeyDown(event) { 
-            if (event.key === 'Alt' || event.key === 'Option') {
-                this.isOptionKeyDown = true;
-                if (!this.isPanning && !this.isSelectingRect && this.canvas) this.canvas.style.cursor = 'crosshair';
-            } else if (event.key === 'Shift') {
-                this.isShiftKeyDown = true;
-                if (!this.isPanning && !this.isSelectingRect && this.canvas) this.canvas.style.cursor = 'help';
-            }
-        }
-        _handleKeyUp(event) { 
-            if (event.key === 'Alt' || event.key === 'Option') {
-                this.isOptionKeyDown = false;
-                if (this.isSelectingRect) { 
-                    this.isSelectingRect = false; 
-                    this.currentMousePos = null; 
-                    this._render(); 
-                }
-                if (this.canvas && !this.isShiftKeyDown && !this.isPanning) {
-                    this.canvas.style.cursor = 'grab';
-                }
-            } else if (event.key === 'Shift') {
-                this.isShiftKeyDown = false;
-                if (this.canvas && !this.isOptionKeyDown && !this.isPanning) {
-                    this.canvas.style.cursor = 'grab';
-                }
-            }
-        }
-        _render() {
-            if (!this.imageInfo || !this.ctx) return;
-            if (this.isLoadingImage && !(this.isSelectingRect && this.isOptionKeyDown && this.currentMousePos)) return;
-
-            const canvasW = this.canvas.width;
-            const canvasH = this.canvas.height;
-
-            let sourceRegionW = canvasW / this.currentScale;
-            let sourceRegionH = canvasH / this.currentScale;
-
-            if (this.imageInfo.width * this.currentScale > canvasW) { 
-                this.panX = Math.max(0, Math.min(this.panX, this.imageInfo.width - sourceRegionW));
-            } else { 
-                this.panX = (this.imageInfo.width - sourceRegionW) / 2;
-            }
-            if (this.imageInfo.height * this.currentScale > canvasH) { 
-                this.panY = Math.max(0, Math.min(this.panY, this.imageInfo.height - sourceRegionH));
-            } else { 
-                this.panY = (this.imageInfo.height - sourceRegionH) / 2;
-            }
-            
-            let reqRegionX = Math.round(this.panX);
-            let reqRegionY = Math.round(this.panY);
-            let reqRegionW = Math.round(sourceRegionW);
-            let reqRegionH = Math.round(sourceRegionH);
-
-            let effectiveReqX = Math.max(0, reqRegionX);
-            let effectiveReqY = Math.max(0, reqRegionY);
-            let effectiveReqW = reqRegionW;
-            let effectiveReqH = reqRegionH;
-
-            if (reqRegionX < 0) effectiveReqW = reqRegionW + reqRegionX; 
-            if (reqRegionY < 0) effectiveReqH = reqRegionH + reqRegionY; 
-            
-            effectiveReqW = Math.min(effectiveReqW, this.imageInfo.width - effectiveReqX);
-            effectiveReqH = Math.min(effectiveReqH, this.imageInfo.height - effectiveReqY);
-            
-            if (effectiveReqW <= 0 || effectiveReqH <= 0) {
-                this.ctx.clearRect(0, 0, canvasW, canvasH);
-                this.ctx.fillStyle = '#DDD'; 
-                this.ctx.fillRect(0,0,canvasW, canvasH);
-                this.ctx.fillStyle = 'black';
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText("Zoomed out too far or invalid region", canvasW/2, canvasH/2);
-                this._drawRectangles(); 
-                if (this.isSelectingRect && this.isOptionKeyDown && this.dragStartPos && this.currentMousePos) this._drawTemporarySelectionRect();
-                return;
-            }
-            
-            const regionStr = `${effectiveReqX},${effectiveReqY},${effectiveReqW},${effectiveReqH}`;
-            const sizeStr = `!${Math.ceil(canvasW)},${Math.ceil(canvasH)}`;
-            const imageUrl = this.urnData.getFullIIIFUrl(regionStr, sizeStr);
-
-            const shouldSkipLoad = imageUrl === this.lastRenderedImageUrl && this.loadedImage && 
-                                    !(this.isSelectingRect && this.isOptionKeyDown && this.currentMousePos);
-
-            if (shouldSkipLoad) { 
-                this.ctx.clearRect(0, 0, canvasW, canvasH);
-                this._drawLoadedImage(this.loadedImage); 
-                this._drawRectangles();
-                if (this.isSelectingRect && this.isOptionKeyDown && this.dragStartPos && this.currentMousePos) {
-                    this._drawTemporarySelectionRect();
-                }
-                return;
-            }
-            
-            if (this.loadedImage && (this.isSelectingRect && this.isOptionKeyDown && this.currentMousePos) && imageUrl === this.lastRenderedImageUrl) {
-                this.ctx.clearRect(0, 0, canvasW, canvasH);
-                this._drawLoadedImage(this.loadedImage);
-                this._drawRectangles();
-                this._drawTemporarySelectionRect(); 
-                return;
-            }
-
-            this.isLoadingImage = true;
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            
-            img.onload = () => {
-                this.isLoadingImage = false;
-                this.loadedImage = img; 
-                this.lastRenderedImageUrl = imageUrl;
-                this.currentActualReqX = effectiveReqX;
-                this.currentActualReqY = effectiveReqY;
-
-                this.ctx.clearRect(0, 0, canvasW, canvasH);
-                this._drawLoadedImage(img);
-                this._drawRectangles();
-                if (this.isSelectingRect && this.isOptionKeyDown && this.dragStartPos && this.currentMousePos) {
-                    this._drawTemporarySelectionRect();
-                }
-            };
-            img.onerror = (e) => {
-                this.isLoadingImage = false;
-                console.error("Error loading image tile:", imageUrl, e);
-                this.ctx.clearRect(0,0, canvasW, canvasH);
-                this.ctx.fillStyle = 'red';
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText('Error loading image. Check console.', canvasW/2, canvasH/2);
-            };
-            img.src = imageUrl;
-        }
-        _drawLoadedImage(img) { 
-            if (!img || !this.imageInfo) return;
-            const canvasW = this.canvas.width;
-            const canvasH = this.canvas.height;
-            
-            let drawX = (this.currentActualReqX - this.panX) * this.currentScale;
-            let drawY = (this.currentActualReqY - this.panY) * this.currentScale;
-            
-            this.ctx.fillStyle = '#EEE'; 
-            this.ctx.fillRect(0, 0, canvasW, canvasH);
-            this.ctx.drawImage(img, drawX, drawY, img.width, img.height);
-        }
-
-        _drawRectangles() {
-            if (!this.imageInfo || !this.ctx) return; 
-            
-            this.rectangles.forEach(rect => {
-                const canvasRect = this._percentageToCanvasCoordinates(rect.x, rect.y, rect.w, rect.h);
-                this.ctx.fillStyle = rect.fillColor; 
-                this.ctx.fillRect(canvasRect.x, canvasRect.y, canvasRect.w, canvasRect.h);
-            });
-        }
-
-        _drawTemporarySelectionRect() { 
-            if (!this.dragStartPos || !this.currentMousePos || !this.isOptionKeyDown) return; 
-            
-            this.ctx.fillStyle = 'rgba(0, 100, 255, 0.3)'; 
-            this.ctx.strokeStyle = 'rgba(0, 100, 255, 0.8)'; 
-            this.ctx.lineWidth = 1;
-            
-            const x = Math.min(this.dragStartPos.x, this.currentMousePos.x);
-            const y = Math.min(this.dragStartPos.y, this.currentMousePos.y);
-            const w = Math.abs(this.dragStartPos.x - this.currentMousePos.x);
-            const h = Math.abs(this.dragStartPos.y - this.currentMousePos.y);
-            
-            this.ctx.fillRect(x, y, w, h);
-            this.ctx.strokeRect(x, y, w, h); 
-        }
-
-        removeRectangle(rectangleURNToRemove) {
-            const initialLength = this.rectangles.length;
-            this.rectangles = this.rectangles.filter(rect => rect.urn !== rectangleURNToRemove);
-
-            if (this.rectangles.length < initialLength) { 
-                this._render(); 
-                if (this.options.onRectangleSelected) {
-                    const urnListString = this.rectangles.map(r => r.urn).join('\n');
-                    this.options.onRectangleSelected(urnListString); 
-                }
-                return true; 
-            }
-            return false; 
         }
         
-        clearAllRectangles() {
-            if (this.rectangles.length > 0) {
-                this.rectangles = [];
-                this._render();
-                if (this.options.onRectangleSelected) {
-                    this.options.onRectangleSelected(""); 
-                }
+        _updateCursor(event = null) {
+            if (this.isPanning) {
+                this.canvas.style.cursor = 'grabbing';
+            } else if (this.isSelecting) {
+                this.canvas.style.cursor = 'crosshair';
+            } else if (event && event.altKey) { // Hovering with Alt
+                this.canvas.style.cursor = 'crosshair';
+            } else if (event && event.shiftKey) { // Hovering with Shift
+                this.canvas.style.cursor = 'help';
+            } else { // Default hover
+                this.canvas.style.cursor = 'grab';
             }
+        }
+
+        _initEventListeners() {
+            this.canvas.addEventListener('mousedown', this._onMouseDown.bind(this));
+            this.canvas.addEventListener('mousemove', this._onMouseMove.bind(this));
+            this.canvas.addEventListener('mouseup', this._onMouseUp.bind(this));
+            this.canvas.addEventListener('mouseleave', this._onMouseLeave.bind(this));
+            this.canvas.addEventListener('wheel', this._onWheel.bind(this), { passive: false });
+            this.canvas.addEventListener('click', this._onClick.bind(this));
+
+            // Listen to key events on window to update cursor if keys are pressed/released
+            // without mouse movement over canvas, though mousemove is primary for hover.
+            window.addEventListener('keydown', this._onGlobalKeyDown.bind(this));
+            window.addEventListener('keyup', this._onGlobalKeyUp.bind(this));
+        }
+        
+        _onGlobalKeyDown(event) {
+            // If mouse is over canvas, update cursor
+            if (this.canvas.matches(':hover')) {
+                 this._updateCursor(event);
+            }
+        }
+        _onGlobalKeyUp(event) {
+             if (this.canvas.matches(':hover')) {
+                 this._updateCursor(event);
+            }
+        }
+
+
+        _onMouseDown(event) {
+            const pos = this._getMousePosOnCanvas(event);
+            this.lastMouseX = pos.x;
+            this.lastMouseY = pos.y;
+
+            if (event.altKey) { 
+                this.isSelecting = true;
+                this.isPanning = false;
+                const startPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                this.selectionStartX = startPercentCoords.x;
+                this.selectionStartY = startPercentCoords.y;
+                this.currentSelectionRect = {
+                    x: this.selectionStartX,
+                    y: this.selectionStartY,
+                    w: 0,
+                    h: 0
+                };
+            } else if (!event.shiftKey) { // Pan only if not shift (shift is for query on click)
+                this.isPanning = true;
+                this.isSelecting = false;
+            }
+            this._updateCursor(event); // Update cursor based on action/keys
+        }
+
+        _onMouseMove(event) {
+            const pos = this._getMousePosOnCanvas(event);
+            if (this.isPanning) {
+                const dx = pos.x - this.lastMouseX;
+                const dy = pos.y - this.lastMouseY;
+                this.viewOriginX += dx;
+                this.viewOriginY += dy;
+                this.lastMouseX = pos.x;
+                this.lastMouseY = pos.y;
+                this.loadCurrentImage(); 
+            } else if (this.isSelecting) {
+                const currentPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                const x1 = Math.min(this.selectionStartX, currentPercentCoords.x);
+                const y1 = Math.min(this.selectionStartY, currentPercentCoords.y);
+                const x2 = Math.max(this.selectionStartX, currentPercentCoords.x);
+                const y2 = Math.max(this.selectionStartY, currentPercentCoords.y);
+                this.currentSelectionRect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+                this.redraw();
+            }
+            this._updateCursor(event); // Update cursor on hover
+        }
+
+        _onMouseUp(event) {
+            const wasPanning = this.isPanning;
+            const wasSelecting = this.isSelecting;
+
+            this.isPanning = false;
+            this.isSelecting = false;
+
+            if (wasSelecting) {
+                if (this.currentSelectionRect && this.currentSelectionRect.w > 0.001 && this.currentSelectionRect.h > 0.001) {
+                    let { x, y, w, h } = this.currentSelectionRect;
+                    x = Math.max(0, Math.min(1 - w, x));
+                    y = Math.max(0, Math.min(1 - h, y));
+                    w = Math.max(0, Math.min(1 - x, w));
+                    h = Math.max(0, Math.min(1 - y, h));
+                    
+                    if (w > 0 && h > 0) {
+                        const newRect = {
+                            x: x, y: y, w: w, h: h,
+                            urnWithRoi: `${this.baseUrn}@${x.toFixed(4)},${y.toFixed(4)},${w.toFixed(4)},${h.toFixed(4)}`,
+                            color: `rgba(${Math.floor(Math.random()*255)}, ${Math.floor(Math.random()*255)}, ${Math.floor(Math.random()*255)}, 0.5)`
+                        };
+                        this.rectangles.push(newRect);
+                        const allRectUrns = this.rectangles.map(r => r.urnWithRoi).join('\n');
+                        this.rectangleSelectedListener(allRectUrns, this.rectangles); // Pass full rect objects too
+                    }
+                }
+                this.currentSelectionRect = null;
+                this.redraw();
+            }
+            this._updateCursor(event); // Update cursor after action ends
+        }
+        
+        _onMouseLeave(event) {
+            this.isPanning = false; // Stop panning if mouse leaves
+            if (this.isSelecting) { // If was selecting, cancel it
+                 this.isSelecting = false;
+                 this.currentSelectionRect = null;
+                 this.redraw();
+            }
+            this.canvas.style.cursor = 'grab'; // Reset to default grab
+        }
+
+        _onWheel(event) {
+            event.preventDefault();
+            const pos = this._getMousePosOnCanvas(event);
+            const zoomIntensity = 0.1;
+            const delta = event.deltaY < 0 ? 1 + zoomIntensity : 1 - zoomIntensity;
+
+            const imgPtX = (pos.x - this.viewOriginX) / this.currentScale;
+            const imgPtY = (pos.y - this.viewOriginY) / this.currentScale;
+
+            this.currentScale *= delta;
+            this.currentScale = Math.max(0.01, Math.min(this.currentScale, 20)); 
+
+            this.viewOriginX = pos.x - (imgPtX * this.currentScale);
+            this.viewOriginY = pos.y - (imgPtY * this.currentScale);
+
+            this.loadCurrentImage();
+        }
+
+        _onClick(event) {
+            // Click is primarily for query mode
+            if (event.shiftKey) {
+                const pos = this._getMousePosOnCanvas(event);
+                const clickPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                
+                const clickedRects = this.rectangles.filter(rect => {
+                    return clickPercentCoords.x >= rect.x &&
+                           clickPercentCoords.x <= rect.x + rect.w &&
+                           clickPercentCoords.y >= rect.y &&
+                           clickPercentCoords.y <= rect.y + rect.h;
+                });
+                this.queryListener(clickedRects.map(r => r.urnWithRoi));
+            }
+            // Standard click (without shift or alt) doesn't do anything else here.
+            // Pan is mousedown-drag-mouseup. Selection is alt-mousedown-drag-mouseup.
+        }
+        
+        async setUrn(newUrnString) {
+            this.baseUrnParsed = parseURN(newUrnString);
+            if (!this.baseUrnParsed) {
+                console.error(`Invalid URN for viewer: ${newUrnString}`);
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillText(`Error: Invalid URN.`, 10, 50);
+                return;
+            }
+            this.baseUrn = this.baseUrnParsed.baseUrn;
+            this.rectangles = []; 
+            this.rectangleSelectedListener("", []); 
+            this.queryListener([]); 
+            await this.init();
+        }
+
+        removeRectangle(urnWithRoiToRemove) {
+            const initialLength = this.rectangles.length;
+            this.rectangles = this.rectangles.filter(rect => rect.urnWithRoi !== urnWithRoiToRemove);
+            if (this.rectangles.length < initialLength) {
+                this.redraw();
+                const allRectUrns = this.rectangles.map(r => r.urnWithRoi).join('\n');
+                this.rectangleSelectedListener(allRectUrns, this.rectangles); // Pass full rect objects too
+                return true;
+            }
+            return false;
+        }
+        
+        destroy() {
+            window.removeEventListener('keydown', this._onGlobalKeyDown);
+            window.removeEventListener('keyup', this._onGlobalKeyUp);
+            this.canvas.removeEventListener('mousedown', this._onMouseDown);
+            this.canvas.removeEventListener('mousemove', this._onMouseMove);
+            this.canvas.removeEventListener('mouseup', this._onMouseUp);
+            this.canvas.removeEventListener('mouseleave', this._onMouseLeave);
+            this.canvas.removeEventListener('wheel', this._onWheel);
+            this.canvas.removeEventListener('click', this._onClick);
+            if (this.container && this.canvas.parentNode === this.container) {
+                this.container.removeChild(this.canvas);
+            }
+            this.container.innerHTML = '';
         }
     }
 
-    window.HMTImageLibrary = {
-        createViewer: function(element, urn, options) {
-            try {
-                return new HMTImageViewer(element, urn, options);
-            } catch (error) {
-                console.error("Failed to create HMTImageViewer:", error);
-                const targetElement = typeof element === 'string' ? document.getElementById(element) : element;
-                if (targetElement) {
-                    targetElement.innerHTML = `<p style="color:red;">Failed to initialize viewer: ${error.message}</p>`;
-                }
-                return null;
+    function createViewer(elementId, urnString, viewerOptions = {}) {
+        try {
+            const viewer = new HMTImageViewer(elementId, urnString, viewerOptions);
+            viewer.init(); 
+            return viewer;
+        } catch (error) {
+            console.error(`Failed to create viewer for ${elementId}:`, error);
+            const container = document.getElementById(elementId);
+            if (container) {
+                container.innerHTML = `<p style="color:red;">Error creating viewer: ${error.message}</p>`;
             }
-        },
-        getIIIFImageUrl: function(urnString, outputWidth, outputHeight) {
-            if (!urnString || typeof urnString !== 'string' || urnString.trim() === "") {
-                throw new Error("URN string is required and must be non-empty.");
-            }
-        
-            const baseUrnForParsing = urnString.split('@')[0];
-            const urnData = parseHMTURN(baseUrnForParsing); 
-            const roiFragment = _parseROIFragment(urnString); 
-        
-            let regionParameter = 'full';
-            if (roiFragment) {
-                const pctX = Math.round(roiFragment.x * 100);
-                const pctY = Math.round(roiFragment.y * 100);
-                const pctW = Math.round(roiFragment.w * 100);
-                const pctH = Math.round(roiFragment.h * 100);
-                regionParameter = `pct:${pctX},${pctY},${pctW},${pctH}`;
-            }
-        
-            let sizeParameter = 'full'; 
-            
-            const w = parseInt(outputWidth, 10);
-            const h = parseInt(outputHeight, 10);
-        
-            const hasWidth = !isNaN(w) && w > 0;
-            const hasHeight = !isNaN(h) && h > 0;
-        
-            if (hasWidth && hasHeight) {
-                sizeParameter = `!${w},${h}`; 
-            } else if (hasWidth) {
-                sizeParameter = `${w},`;    
-            } else if (hasHeight) {
-                sizeParameter = `,${h}`;    
-            }
-        
-            const rotationParameter = '0';
-            const qualityParameter = 'default'; 
-            const formatParameter = 'jpg';
-        
-            return `${urnData.iiifServer}${urnData.iiifImagePath}/${regionParameter}/${sizeParameter}/${rotationParameter}/${qualityParameter}.${formatParameter}`;
+            return null;
         }
+    }
+
+    const HMTImageLib = {
+        createViewer,
+        getIIIFImageUrl,
+        _parseURN: parseURN 
     };
 
-})(window);
+    global.HMTImageLib = HMTImageLib;
+
+}(typeof window !== 'undefined' ? window : this));

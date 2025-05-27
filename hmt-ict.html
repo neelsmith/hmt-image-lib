@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HMT Image Lib - Rectangle Management Test</title>
+    <script src="hmt-iiif-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; display: flex; gap: 20px;}
+        .controls { width: 350px; }
+        .viewer-container {
+            width: 800px;
+            height: 600px;
+            border: 1px solid #ccc;
+            overflow: hidden;
+        }
+        #urnInput { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+        button { margin-bottom: 10px; }
+        #highlightedRectanglesList div {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9em;
+        }
+        #highlightedRectanglesList div:last-child {
+            border-bottom: none;
+        }
+        #highlightedRectanglesList span {
+            word-break: break-all;
+            margin-right: 10px;
+        }
+        #highlightedRectanglesList .remove-rect-btn {
+            padding: 3px 8px;
+            font-size: 0.8em;
+            cursor: pointer;
+        }
+        #queryResult { 
+            width: 100%; 
+            box-sizing: border-box; 
+            min-height: 50px; 
+            font-size: 0.9em; 
+            background-color: #f9f9f9; 
+            border: 1px solid #ddd; 
+            padding: 5px;
+            white-space: pre-wrap;
+        }
+        .cursor-info { font-size: 0.85em; color: #555; margin-top:15px;}
+        .cursor-info strong { color: #000; }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h1>Rectangle Management</h1>
+        
+        <label for="urnInput">Image URN:</label>
+        <input type="text" id="urnInput" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
+        <button id="loadUrnButton">Load/Update Image</button>
+
+        <div class="cursor-info">
+            <p><strong>Cursors:</strong></p>
+            <ul>
+                <li>Default/Pan: <strong>Grab Hand</strong></li>
+                <li>Selection (Option/Alt key): <strong>Crosshair</strong></li>
+                <li>Query (Shift key): <strong>Help (?)</strong></li>
+            </ul>
+        </div>
+
+        <h3>Highlighted Rectangles:</h3>
+        <div id="highlightedRectanglesListContainer" style="border: 1px solid #ddd; max-height: 200px; overflow-y: auto;">
+             <div id="highlightedRectanglesList">
+                <!-- Rectangles will be listed here by JavaScript -->
+             </div>
+        </div>
+        <p id="noRectsMessage" style="display: none;">No rectangles highlighted yet.</p>
+
+
+        <h3>Query Result:</h3>
+        <pre id="queryResult"></pre>
+    </div>
+
+    <div id="interactiveViewer" class="viewer-container"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const urnInput = document.getElementById('urnInput');
+            const loadUrnButton = document.getElementById('loadUrnButton');
+            const rectanglesListDiv = document.getElementById('highlightedRectanglesList');
+            const noRectsMessage = document.getElementById('noRectsMessage');
+            const queryResultPre = document.getElementById('queryResult');
+
+            let currentViewer = null;
+
+            function updateRectanglesList(rectanglesArray) {
+                rectanglesListDiv.innerHTML = ''; // Clear current list
+                if (rectanglesArray && rectanglesArray.length > 0) {
+                    noRectsMessage.style.display = 'none';
+                    rectanglesArray.forEach(rect => {
+                        const itemDiv = document.createElement('div');
+                        const urnSpan = document.createElement('span');
+                        urnSpan.textContent = rect.urnWithRoi;
+                        
+                        const removeButton = document.createElement('button');
+                        removeButton.textContent = 'Remove';
+                        removeButton.classList.add('remove-rect-btn');
+                        removeButton.dataset.urn = rect.urnWithRoi;
+
+                        removeButton.addEventListener('click', function() {
+                            if (currentViewer) {
+                                currentViewer.removeRectangle(this.dataset.urn);
+                            }
+                        });
+
+                        itemDiv.appendChild(urnSpan);
+                        itemDiv.appendChild(removeButton);
+                        rectanglesListDiv.appendChild(itemDiv);
+                    });
+                } else {
+                    noRectsMessage.style.display = 'block';
+                }
+            }
+
+            function rectangleSelectedListener(urnsWithRoiString, rectanglesArray) {
+                // The HMTImageViewer now calls this with the array of rectangle objects
+                updateRectanglesList(rectanglesArray);
+            }
+
+            function queryListener(matchingUrnsList) {
+                if (matchingUrnsList.length > 0) {
+                    queryResultPre.textContent = "Clicked point is within:\n" + matchingUrnsList.join('\n');
+                } else {
+                    queryResultPre.textContent = "Clicked point is not within any highlighted rectangle.";
+                }
+            }
+            
+            function setupViewer(urn) {
+                if (currentViewer && typeof currentViewer.destroy === 'function') {
+                    currentViewer.destroy();
+                }
+                currentViewer = HMTImageLib.createViewer('interactiveViewer', urn, {
+                    rectangleSelectedListener: rectangleSelectedListener,
+                    queryListener: queryListener
+                });
+
+                if (!currentViewer && document.getElementById('interactiveViewer').textContent.includes("Error")) {
+                    updateRectanglesList([]); // Clear list on error
+                    queryResultPre.textContent = "";
+                } else if (currentViewer) {
+                    // Initial state for rectangles (should be empty from viewer)
+                    updateRectanglesList(currentViewer.rectangles);
+                }
+            }
+            
+            loadUrnButton.addEventListener('click', () => {
+                const newUrn = urnInput.value.trim();
+                if (currentViewer && typeof currentViewer.setUrn === 'function') {
+                    currentViewer.setUrn(newUrn).then(() => {
+                         // setUrn internally calls rectangleSelectedListener with empty arrays
+                         // so the list will be cleared automatically.
+                         queryResultPre.textContent = ""; // Clear query result too
+                    });
+                } else { 
+                    setupViewer(newUrn);
+                }
+            });
+
+            // Initial load
+            setupViewer(urnInput.value.trim());
+        });
+    </script>
+</body>
+</html>
