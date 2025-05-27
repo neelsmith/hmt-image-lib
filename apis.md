@@ -18,7 +18,7 @@ You can include this library in your HTML page directly from jsDelivr:
 
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/neelsmith/hmt-image-lib/hmt-iiif-lib.js@2.0.0"></script>
+<script src="https://cdn.jsdelivr.net/gh/neelsmith/hmt-image-lib@2.0.0/hmt-iiif-lib.js"></script>
 ```
 
 Alternatively, you can download `hmt-iiif-lib.js` and host it yourself:
@@ -29,56 +29,91 @@ Alternatively, you can download `hmt-iiif-lib.js` and host it yourself:
 
 The library exposes a global object: `window.HMTImageLibrary`.
 
+
+
 ## Core Library Object: `HMTImageLibrary`
 
 This is the main entry point for using the library.
 
-### `HMTImageLibrary.createViewer(element, urn, options)`
 
-Creates and initializes an interactive IIIF image viewer within a specified HTML element.
+## Core Viewer: `HMTImageLibrary.createViewer()`
 
-*   **Parameters:**
-    *   `element` (String | HTMLElement): **Required**. The ID of the HTML div element that will contain the viewer, or the HTMLElement itself.
-    *   `urn` (String): **Required**. The CITE2 URN identifying the HMT image (e.g., `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`). The base URN (without `@` fragment) is used for image loading.
-    *   `options` (Object): *Optional*. An object for configuring the viewer and its callbacks.
-        *   `onRectangleSelected` (Function): *Optional*. A callback function invoked when a rectangle is drawn or removed.
-            *   **Argument:** `rectURNsString` (String) - A newline-separated string of URNs for all currently selected rectangles. Each URN includes an ROI fragment (e.g., `urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.2,0.3,0.4`).
-        *   `onQuery` (Function): *Optional*. A callback function invoked when the user Shift+clicks on the image.
-            *   **Argument:** `matchingRectsURNs` (Array<String>) - An array of URNs (with ROI fragments) for all rectangles that contain the clicked point. An empty array is passed if no rectangles contain the point.
+This function creates an interactive IIIF image viewer instance within a specified DOM element. It supports panning, zooming, displaying multiple Regions of Interest (ROIs) defined in URNs, a mode for users to draw new ROIs, and a mode to query ROIs and coordinates via Shift+Click.
 
-*   **Returns:** (HMTImageViewer | null)
-    *   An instance of the `HMTImageViewer` class on success.
-    *   `null` if an error occurs during initialization (an error will also be logged to the console).
+### Parameters
 
-*   **Example:**
+`HMTImageLibrary.createViewer(elementId, urnInput, callbacks)`
 
-    ```html
-    <div id="myViewer" style="width: 600px; height: 400px; border: 1px solid black;"></div>
-    <script>
-        const viewerOptions = {
-            onRectangleSelected: function(urns) {
-                console.log("Rectangles selected/updated:\n" + urns);
-                // Update your UI with this list
-            },
-            onQuery: function(matchingUrns) {
-                if (matchingUrns.length > 0) {
-                    alert("Clicked point is within:\n" + matchingUrns.join('\n'));
-                } else {
-                    alert("Clicked point is not within any rectangle.");
-                }
-            }
-        };
-        const viewerInstance = HMTImageLibrary.createViewer(
-            'myViewer',
-            'urn:cite2:hmt:vaimg.2017a:VA012RN_0013',
-            viewerOptions
-        );
+1.  **`elementId`** (String, Required)
+    *   The `id` of the HTML `div` element where the viewer will be rendered. The viewer will clear any existing content within this element.
 
-        if (viewerInstance) {
-            console.log("Viewer created successfully!");
-        }
-    </script>
-    ```
+2.  **`urnInput`** (String | Array<String>, Required)
+    *   A single CITE2 URN string or an array of CITE2 URN strings.
+    *   All URNs (if an array is provided) **must** refer to the same base HMT image. They can differ by their ROI extension (e.g., `@x,y,w,h`).
+    *   The first URN in the array (or the single URN if a string is passed) is used to fetch the base image information (`info.json`).
+    *   ROIs specified in the URNs will be displayed as semi-opaque colored overlays on the image. Opacity for these is typically `0.3`.
+        *   Example single URN: `'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.2,0.2'`
+        *   Example array of URNs:
+            ```javascript
+            [
+                'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.2,0.2',
+                'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.5,0.5,0.3,0.3'
+            ]
+            ```
+
+3.  **`callbacks`** (Object, Optional)
+    *   An object to provide callback functions for various user interactions. All callbacks are optional.
+    *   **`callbacks.onRoiDrawnCallback`** (Function, Optional)
+        *   Invoked when a user successfully draws a new ROI on the image using the "Draw Mode" (Alt/Option + Drag).
+        *   Receives one argument:
+            *   `roiUrnString` (String): The base URN of the displayed image, appended with the newly drawn ROI in `@x,y,w,h` format (e.g., `'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15'`). Coordinates `x,y,w,h` are percentages (0.0 to 1.0) of the full image dimensions.
+        *   User-drawn ROIs are also immediately displayed on the viewer with a random semi-opaque color (typically 0.5 opacity).
+    *   **`callbacks.onShiftClickHitRoisCallback`** (Function, Optional)
+        *   Invoked when a user Shift+Clicks on the image.
+        *   Receives one argument:
+            *   `hitRoiUrnStringsArray` (Array<String>): An array of URN strings (base URN + `@x,y,w,h`) for all displayed ROIs (both initial and user-drawn) that contain the clicked point. The array will be empty if no ROIs are hit.
+    *   **`callbacks.onShiftClickPointCallback`** (Function, Optional)
+        *   Invoked when a user Shift+Clicks on the image.
+        *   Receives one argument:
+            *   `pointPercentage` (Object): An object `{ x, y }` representing the coordinates of the click point on the *full original image*, expressed as percentages (0.0 to 1.0).
+                *   `x`: Horizontal percentage from the left edge.
+                *   `y`: Vertical percentage from the top edge.
+                *   Returns `null` if the point cannot be determined on the image (e.g., clicked outside image content area).
+
+### Interactions
+
+*   **Pan**: Click and drag the image with the left mouse button.
+*   **Zoom**: Use the mouse wheel. Zoom is centered on the mouse cursor's position.
+*   **ROI Drawing Mode ("Draw Mode")**:
+    *   **Activate**: Hold down the **Option** key (Mac) or **Alt** key (Windows/Linux). The cursor will change to a crosshair.
+    *   **Draw**: While the Option/Alt key is held, click and drag on the image to draw a rectangle. A temporary dashed blue rectangle will provide visual feedback.
+    *   **Finalize**: Release the mouse button.
+        *   The `onRoiDrawnCallback` (if provided) is called.
+        *   The new ROI is displayed on the image.
+    *   **Cancel**: Move the mouse outside the viewer area while drawing, or release the Option/Alt key before releasing the mouse button.
+    *   Panning and zooming are disabled while Option/Alt is held.
+*   **ROI Query Mode ("Query Mode")**:
+    *   **Activate**: Hold down the **Shift** key. The cursor may change (e.g., to 'help').
+    *   **Query**: While Shift is held, click the left mouse button on the image.
+        *   The `onShiftClickPointCallback` (if provided) is called with the clicked point's coordinates.
+        *   The `onShiftClickHitRoisCallback` (if provided) is called with a list of ROIs under the clicked point.
+    *   Panning, zooming, and ROI drawing are disabled while Shift is held and a click is processed.
+
+### Example Usage
+
+**HTML:**
+```html
+<div id="viewer" style="width: 700px; height: 500px; border: 1px solid #555;"></div>
+<div id="infoPanel">
+    <h4>Drawn ROIs:</h4>
+    <textarea id="drawnList" rows="4" readonly></textarea>
+    <h4>Shift+Click Point:</h4>
+    <pre id="clickPointInfo"></pre>
+    <h4>Shift+Click Hit ROIs:</h4>
+    <pre id="hitListInfo"></pre>
+</div>
+```
+
 
 ### `HMTImageLibrary.getIIIFImageUrl(urnString, outputWidth, outputHeight)`
 
