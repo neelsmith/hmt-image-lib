@@ -2,103 +2,134 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>HMT Image Lib - Interactive Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMT IIIF Lib - Interactive Test</title>
     <script src="hmt-iiif-lib.js"></script>
     <style>
-        body { font-family: sans-serif; margin: 20px; display: flex; gap: 20px;}
-        .controls { width: 300px; }
-        .viewer-container {
-            width: 800px;
-            height: 600px;
-            border: 1px solid #ccc;
-            overflow: hidden;
-        }
-        textarea, pre { width: 100%; box-sizing: border-box; min-height: 100px; font-size: 0.9em; }
-        label { display: block; margin-bottom: 5px; }
-        input[type="text"] { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
-        button { margin-bottom: 10px; }
+        body { font-family: sans-serif; display: flex; gap: 20px; margin: 20px; }
+        .controls, .results { width: 300px; }
+        .viewer-area { flex-grow: 1; }
+        #interactiveViewerContainer { width: 100%; height: 500px; border: 1px solid green; }
+        label, input, button { display: block; margin-bottom: 10px; }
+        input[type="text"] { width: calc(100% - 10px); }
+        #roiList li { margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+        #roiList button { margin-left: 10px; margin-bottom: 0; }
+        textarea { width: 100%; min-height: 80px; }
     </style>
 </head>
 <body>
     <div class="controls">
-        <h1>HMT Image Library - Interactive Test</h1>
-        
+        <h2>Controls</h2>
         <label for="urnInput">Image URN:</label>
         <input type="text" id="urnInput" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
-        <button id="loadUrnButton">Load/Update Image</button>
-
-        <p>
-            <strong>Rectangle Selection:</strong> Hold <code>Option</code> (or <code>Alt</code>) key, then click and drag on the image.
-        </p>
-        <label for="selectedRectangles">Selected Rectangles (URNs with ROI):</label>
-        <textarea id="selectedRectangles" rows="5" readonly></textarea>
-
-        <p>
-            <strong>Query Mode:</strong> Hold <code>Shift</code> key, then click on the image.
-        </p>
-        <label for="queryResult">Query Result (Rectangles containing click point):</label>
-        <pre id="queryResult"></pre>
+        <button id="loadViewerBtn">Load/Reset Viewer</button>
+        
+        <p><strong>Instructions:</strong></p>
+        <ul>
+            <li><strong>Zoom:</strong> Mouse wheel</li>
+            <li><strong>Pan:</strong> Click & drag</li>
+            <li><strong>Select ROI:</strong> Option/Alt + Click & drag</li>
+            <li><strong>Query ROI:</strong> Shift + Click</li>
+        </ul>
     </div>
 
-    <div id="interactiveViewer" class="viewer-container"></div>
+    <div class="viewer-area">
+        <h2>Viewer</h2>
+        <div id="interactiveViewerContainer"></div>
+    </div>
+
+    <div class="results">
+        <h2>Highlighted ROIs</h2>
+        <ul id="roiList"></ul>
+
+        <h2>Query Results (Shift+Click)</h2>
+        <textarea id="queryResults" readonly></textarea>
+        
+        <h2>All Selected ROIs (Newline Separated)</h2>
+        <textarea id="allSelectedRoisOutput" readonly></textarea>
+    </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const urnInput = document.getElementById('urnInput');
-            const loadUrnButton = document.getElementById('loadUrnButton');
-            const selectedRectanglesTextarea = document.getElementById('selectedRectangles');
-            const queryResultPre = document.getElementById('queryResult');
+        let currentViewer = null;
+        const urnInput = document.getElementById('urnInput');
+        const loadViewerBtn = document.getElementById('loadViewerBtn');
+        const roiListElement = document.getElementById('roiList');
+        const queryResultsElement = document.getElementById('queryResults');
+        const allSelectedRoisOutput = document.getElementById('allSelectedRoisOutput');
 
-            let currentViewer = null;
+        function refreshRoiListDisplay() {
+            if (!currentViewer) {
+                roiListElement.innerHTML = '';
+                return;
+            }
+            const rois = currentViewer.getROIs();
+            roiListElement.innerHTML = ''; // Clear list
 
-            function rectangleSelectedListener(urnsWithRoiString) {
-                selectedRectanglesTextarea.value = urnsWithRoiString;
+            rois.forEach(urn => {
+                const item = document.createElement('li');
+                const urnText = document.createElement('span');
+                urnText.textContent = urn;
+                urnText.title = urn; // Show full URN on hover
+                urnText.style.whiteSpace = "nowrap";
+                urnText.style.overflow = "hidden";
+                urnText.style.textOverflow = "ellipsis";
+                urnText.style.maxWidth = "180px"; // Adjust as needed
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Remove';
+                deleteButton.onclick = () => {
+                    currentViewer.removeROI(urn);
+                    refreshRoiListDisplay(); // Update list after removal
+                    // Also update the allSelectedRoisOutput
+                    allSelectedRoisOutput.value = currentViewer.getROIs().join('\n');
+                };
+                item.appendChild(urnText);
+                item.appendChild(deleteButton);
+                roiListElement.appendChild(item);
+            });
+        }
+
+        function setupViewer() {
+            if (currentViewer) {
+                currentViewer.destroy();
+            }
+            const urn = urnInput.value.trim();
+            if (!urn) {
+                alert("Please enter a URN.");
+                return;
             }
 
-            function queryListener(matchingUrnsList) {
-                if (matchingUrnsList.length > 0) {
-                    queryResultPre.textContent = "Clicked point is within:\n" + matchingUrnsList.join('\n');
-                } else {
-                    queryResultPre.textContent = "Clicked point is not within any highlighted rectangle.";
-                }
-            }
-            
-            function setupViewer(urn) {
-                if (currentViewer) {
-                    // If you implement a destroy method on the viewer:
-                    // currentViewer.destroy(); 
-                    // For now, just re-use or re-create
-                }
-                 // Destroy existing viewer instance if it exists
-                if (currentViewer && typeof currentViewer.destroy === 'function') {
-                    currentViewer.destroy();
-                }
-                currentViewer = HMTImageLib.createViewer('interactiveViewer', urn, {
-                    rectangleSelectedListener: rectangleSelectedListener,
-                    queryListener: queryListener
-                });
-
-                // If createViewer fails (e.g. bad URN initially)
-                if (!currentViewer && document.getElementById('interactiveViewer').textContent.includes("Error")) {
-                    selectedRectanglesTextarea.value = "";
-                    queryResultPre.textContent = "";
-                }
-            }
-            
-            loadUrnButton.addEventListener('click', () => {
-                 // If a viewer exists and has a setUrn method (as added in the JS)
-                if (currentViewer && typeof currentViewer.setUrn === 'function') {
-                    currentViewer.setUrn(urnInput.value.trim());
-                     // Clear outputs as setUrn resets rectangles
-                    selectedRectanglesTextarea.value = "";
-                    queryResultPre.textContent = "";
-                } else { // Otherwise, create a new one
-                    setupViewer(urnInput.value.trim());
+            currentViewer = HMTIIIF.createViewer('interactiveViewerContainer', urn, {
+                onRectangleSelected: (allUrnsString) => {
+                    // allUrnsString is the newline-separated list of all current ROIs
+                    allSelectedRoisOutput.value = allUrnsString;
+                    refreshRoiListDisplay(); // The viewer has already updated its internal list
+                },
+                onQuery: (matchingUrns) => {
+                    queryResultsElement.value = matchingUrns.length > 0 ? 
+                        `Found ${matchingUrns.length} ROI(s):\n${matchingUrns.join('\n')}` : 
+                        'No matching ROIs at clicked point.';
                 }
             });
 
-            // Initial load
-            setupViewer(urnInput.value.trim());
+            // Initial population of lists if the URN had an ROI or if viewer loads default ROIs
+            if (currentViewer) {
+                // Small delay to ensure viewer might have fetched info and initial ROIs
+                setTimeout(() => {
+                     allSelectedRoisOutput.value = currentViewer.getROIs().join('\n');
+                     refreshRoiListDisplay();
+                }, 500);
+            } else {
+                 allSelectedRoisOutput.value = '';
+                 refreshRoiListDisplay();
+            }
+        }
+
+        loadViewerBtn.addEventListener('click', setupViewer);
+        
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            setupViewer(); // Load default URN on page load
         });
     </script>
 </body>

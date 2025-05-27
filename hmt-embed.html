@@ -2,35 +2,24 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Embed an image in a web page</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMT IIIF Lib - getIIIFImageUrl Test</title>
     <script src="hmt-iiif-lib.js"></script>
     <style>
         body { font-family: sans-serif; margin: 20px; }
         .form-group { margin-bottom: 15px; }
         label { display: inline-block; width: 100px; }
-        input[type="text"], input[type="number"] { width: 400px; padding: 5px; }
-        #generatedUrl { 
-            word-break: break-all; 
-            background-color: #f0f0f0; 
-            padding: 10px; 
-            margin-top: 10px; 
-            border: 1px solid #ddd;
-        }
-        #imagePreview { 
-            margin-top: 20px; 
-            border: 1px solid #ccc; 
-            max-width: 100%; 
-            max-height: 600px; /* constrain preview height */
-        }
+        input[type="text"], input[type="number"] { width: 400px; margin-bottom: 5px; }
+        #generatedUrl { word-break: break-all; background: #f0f0f0; padding: 10px; margin-top: 10px; }
+        #imagePreview { margin-top: 20px; max-width: 100%; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
-    <h1>Embed an image in a web page</h1>
+    <h1>HMT IIIF Library - <code>getIIIFImageUrl</code> Test</h1>
 
-    <p>This page illustrates how to use the `getIIIFImageUrl` function with a URN to embed an image in a web page.</p>
     <div class="form-group">
         <label for="urn">URN:</label>
-        <input type="text" id="urn" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.5,0.5">
+        <input type="text" id="urn" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15">
     </div>
     <div class="form-group">
         <label for="width">Width (opt):</label>
@@ -40,57 +29,55 @@
         <label for="height">Height (opt):</label>
         <input type="number" id="height" placeholder="e.g., 600">
     </div>
-    <button id="generateUrlButton">Generate IIIF URL & Display Image</button>
+    <button id="generateUrlBtn">Generate IIIF URL & Display Image</button>
 
-    <h3>Generated URN Value:</h3>
-    <pre id="urnValueDisplay"></pre>
+    <h2>Generated URN Value:</h2>
+    <p id="urnDisplay"></p>
 
-    <h3>Generated IIIF Image URL:</h3>
+    <h2>Generated IIIF URL:</h2>
     <pre id="generatedUrl"></pre>
 
-    <h3>Image Preview:</h3>
-    <img id="imagePreview" src="#" alt="Image preview will appear here">
+    <h2>Image Preview:</h2>
+    <img id="imagePreview" src="#" alt="IIIF Image Preview">
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', () => {
             const urnInput = document.getElementById('urn');
             const widthInput = document.getElementById('width');
             const heightInput = document.getElementById('height');
-            const generateUrlButton = document.getElementById('generateUrlButton');
-            const urnValueDisplay = document.getElementById('urnValueDisplay');
-            const generatedUrlPre = document.getElementById('generatedUrl');
-            const imagePreviewImg = document.getElementById('imagePreview');
+            const generateUrlBtn = document.getElementById('generateUrlBtn');
+            const urnDisplay = document.getElementById('urnDisplay');
+            const generatedUrlElement = document.getElementById('generatedUrl');
+            const imagePreview = document.getElementById('imagePreview');
 
             function updateImage() {
-                const urn = urnInput.value.trim();
+                const urn = urnInput.value;
                 const width = widthInput.value ? parseInt(widthInput.value) : undefined;
                 const height = heightInput.value ? parseInt(heightInput.value) : undefined;
 
-                urnValueDisplay.textContent = urn;
+                urnDisplay.textContent = urn;
 
                 const options = {};
                 if (width) options.width = width;
                 if (height) options.height = height;
 
-                const iiifUrl = HMTImageLib.getIIIFImageUrl(urn, options);
+                const imageUrl = HMTIIIF.getIIIFImageUrl(urn, options);
 
-                if (iiifUrl) {
-                    generatedUrlPre.textContent = iiifUrl;
-                    imagePreviewImg.src = iiifUrl;
-                    imagePreviewImg.style.display = 'block';
+                if (imageUrl) {
+                    generatedUrlElement.textContent = imageUrl;
+                    imagePreview.src = imageUrl;
+                    imagePreview.style.display = 'block';
                 } else {
-                    generatedUrlPre.textContent = "Error generating URL. Check console.";
-                    imagePreviewImg.src = "#";
-                    imagePreviewImg.style.display = 'none';
+                    generatedUrlElement.textContent = 'Error generating URL. Check console.';
+                    imagePreview.src = '#';
+                    imagePreview.style.display = 'none';
                 }
             }
 
-            generateUrlButton.addEventListener('click', updateImage);
+            generateUrlBtn.addEventListener('click', updateImage);
             
-            // Initial generation if URN is pre-filled
-            if (urnInput.value) {
-                 updateImage();
-            }
+            // Initial call to display default
+            updateImage(); 
         });
     </script>
 </body>

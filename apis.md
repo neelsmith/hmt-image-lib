@@ -1,253 +1,266 @@
 
-# HMT Image Library (`hmt-iiif-lib.js`) version 3.0.0 API Documentation
+# HMT IIIF Library (`hmt-iiif-lib.js`) version 3.0.0: API Documentation
+
+`hmt-iiif-lib.js` is a lightweight JavaScript library for interacting with IIIF images from the Homer Multitext Project (HMT). It provides functionality to generate IIIF Image API URLs and to create an interactive image viewer with zoom, pan, region selection, and query capabilities.
 
 ## Table of Contents
 
-1.  [Overview](#overview)
-2.  [Getting Started](#getting-started)
-3.  [Global Library Object: `HMTImageLib`](#global-library-object-hmtimagelib)
-    *   [`HMTImageLib.createViewer(elementId, urnString, viewerOptions)`](#hmtimagelibcreateviewerelementid-urnstring-vieweroptions)
-    *   [`HMTImageLib.getIIIFImageUrl(urnString, options)`](#hmtimagelibgetiiifimageurlurnstring-options)
-    *   [`HMTImageLib._parseURN(urnString)`](#hmtimagelib_parseurnurnstring-internaladvanced)
-4.  [HMTImageViewer Instance](#hmtimageviewer-instance)
-    *   [Properties (Internal)](#properties-internal)
-    *   [Methods](#methods)
-        *   [`viewer.setUrn(newUrnString)`](#viewerseturnnewurnstring)
-        *   [`viewer.removeRectangle(urnWithRoiToRemove)`](#viewerremoverectangleurnwithroitoremove)
-        *   [`viewer.destroy()`](#viewerdestroy)
-5.  [Homer Multitext (HMT) CITE2 URN Format](#homer-multitext-hmt-cite2-urn-format)
-6.  [Viewer Interaction Modes & Cursors](#viewer-interaction-modes--cursors)
+1.  [Installation](#installation)
+2.  [Core Concepts](#core-concepts)
+    *   [CITE2 URNs for HMT Images](#cite2-urns-for-hmt-images)
+    *   [URN to IIIF Conversion](#urn-to-iiif-conversion)
+    *   [Region of Interest (ROI) Extensions](#region-of-interest-roi-extensions)
+3.  [Global Object: `HMTIIIF`](#global-object-hmtiiif)
+4.  [API Functions](#api-functions)
+    *   [`HMTIIIF.getIIIFImageUrl(urnStr, options)`](#hmtiiifgetiiifimageurlurnstr-options)
+    *   [`HMTIIIF.createViewer(containerIdOrElement, urnOrUrns, viewerOptions)`](#hmtiiifcreateviewercontaineridorelement-urnorurns-vieweroptions)
+5.  [Viewer Instance API](#viewer-instance-api)
+    *   [`viewer.destroy()`](#viewerdestroy)
+    *   [`viewer.addROI(urnWithROI)`](#vieweraddroiurnwithroi)
+    *   [`viewer.removeROI(urnWithROI)`](#viewerremoveroiurnwithroi)
+    *   [`viewer.getROIs()`](#viewergetrois)
+6.  [Viewer Interaction Modes](#viewer-interaction-modes)
 
-## 1. Overview
+## 1. Installation
 
-`hmt-iiif-lib.js` is a JavaScript library for displaying and interacting with images from the Homer Multitext (HMT) project via the IIIF (International Image Interoperability Framework) protocol. It provides functionality to:
+To use `hmt-iiif-lib.js` in your project via jsDelivr, include the following script tag in your HTML file. 
 
-*   Create an embeddable image viewer with zoom, pan, rectangle selection, and query capabilities.
-*   Generate IIIF Image API URLs for HMT images, including support for regions of interest (ROI) and image scaling.
+```html
+<script src="https://cdn.jsdelivr.net/gh/neelsmith/hmt-image-lib@3.0.0/hmt-iiif-lib.js"></script>
+```
 
-The library is designed to be used directly in web pages and can be easily integrated using a `<script>` tag, including via services like jsDelivr.
 
-## 2. Getting Started
 
-1.  **Include the Library:**
-    Add the library to your HTML file. If you host it on GitHub, you can use jsDelivr:
+## 2. Core Concepts
 
-    ```html
-     <script src="https://cdn.jsdelivr.net/gh/neelsmith/hmt-image-lib@3.0.0/hmt-iiif-lib.js"></script>
-    <!-- Or link to a local copy -->
-    <!-- <script src="hmt-iiif-lib.js"></script> -->
-    ```
+### CITE2 URNs for HMT Images
+Images in the Homer Multitext project are identified using CITE2 URNs. These URNs have 5 components separated by colons:
+`urn:cite2:{namespace}:{collection-component}:{object-identifier}`
 
-2.  **Create a Container for the Viewer:**
-    Add an HTML element (e.g., a `div`) where the viewer will be rendered.
+Example: `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`
 
-    ```html
-    <div id="myImageViewer" style="width: 800px; height: 600px; border: 1px solid black;"></div>
-    ```
+*   `urn:cite2`: Standard URN prefix for CITE2.
+*   `hmt`: Namespace (3rd component).
+*   `vaimg.2017a`: Collection component (4th component), typically `group.version`.
+*   `VA012RN_0013`: Object identifier (5th component).
 
-3.  **Initialize the Viewer:**
-    Use JavaScript to create a viewer instance.
+### URN to IIIF Conversion
+The library automatically converts HMT CITE2 URNs into the appropriate IIIF identifiers for the HMT IIIF server.
+*   **Protocol:** `http`
+*   **Server:** `www.homermultitext.org/iipsrv?IIIF=`
+*   **IIIF Prefix Base:** `/project/homer/pyramidal/deepzoom`
+*   **Construction:**
+    1.  Start with the IIIF Prefix Base.
+    2.  Append the URN's `namespace`.
+    3.  The URN's `collection-component` is split by a period (`.`). Append the first part.
+    4.  Append the second part of the `collection-component`.
+    *   Example URN `urn:cite2:hmt:vaimg.2017a:VA012RN_0013` yields IIIF Prefix: `/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a`
+*   **Image Identifier:** Append `.tif` to the URN's `object-identifier`.
+    *   Example: `VA012RN_0013.tif`
+*   **Full `info.json` path example:** `http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/info.json`
 
-    ```html
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const urn = "urn:cite2:hmt:vaimg.2017a:VA012RN_0013";
-            const viewer = HMTImageLib.createViewer('myImageViewer', urn);
-            
-            // To use the URL generation function:
-            const imageUrl = HMTImageLib.getIIIFImageUrl(urn, { width: 500 });
-            console.log("IIIF Image URL:", imageUrl);
-        });
-    </script>
-    ```
+### Region of Interest (ROI) Extensions
+URNs can include an ROI extension to specify a rectangular area on the image.
+*   **Format:** `@x,y,w,h` appended to the base URN.
+*   `x,y`: Coordinates of the top-left corner of the rectangle (percentages from 0.0 to 1.0).
+*   `w,h`: Width and height of the rectangle (percentages from 0.0 to 1.0).
+*   Example: `urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15`
 
-## 3. Global Library Object: `HMTImageLib`
+## 3. Global Object: `HMTIIIF`
 
-The library exposes a single global object `HMTImageLib`.
+After including the library, a global object `HMTIIIF` is available, which contains the public functions.
 
-### `HMTImageLib.createViewer(elementId, urnString, viewerOptions = {})`
+```javascript
+console.log(HMTIIIF.createViewer);
+console.log(HMTIIIF.getIIIFImageUrl);
+```
 
-Creates and initializes an HMT Image Viewer instance within the specified HTML element.
+## 4. API Functions
+
+### `HMTIIIF.getIIIFImageUrl(urnStr, options)`
+
+Constructs a IIIF Image API URL for a given HMT CITE2 URN.
 
 *   **Parameters:**
-    *   `elementId` (String): The `id` of the HTML `div` (or other block element) that will contain the viewer.
-    *   `urnString` (String): The CITE2 URN identifying the HMT image to display. See [HMT CITE2 URN Format](#homer-multitext-hmt-cite2-urn-format).
-    *   `viewerOptions` (Object, optional): An object to configure viewer behavior.
-        *   `rectangleSelectedListener` (Function, optional): A callback function invoked when a rectangle is drawn by the user or when rectangles are updated (e.g., removed).
-            *   **Callback arguments:**
-                1.  `urnsWithRoiString` (String): A newline-separated string of all currently highlighted rectangle URNs (e.g., `urn:...@x,y,w,h\nurn:...@x,y,w,h`).
-                2.  `rectanglesArray` (Array): An array of rectangle objects. Each object has the structure:
-                    ```javascript
-                    {
-                        x: Number, // X-coordinate of top-left corner (percentage, 0.0-1.0)
-                        y: Number, // Y-coordinate of top-left corner (percentage, 0.0-1.0)
-                        w: Number, // Width of rectangle (percentage, 0.0-1.0)
-                        h: Number, // Height of rectangle (percentage, 0.0-1.0)
-                        urnWithRoi: String, // The full URN with ROI, e.g., "urn:...@x,y,w,h"
-                        color: String // CSS color string for the rectangle fill, e.g., "rgba(r,g,b,0.5)"
-                    }
-                    ```
-        *   `queryListener` (Function, optional): A callback function invoked when the user shift-clicks on the image.
-            *   **Callback arguments:**
-                1.  `matchingUrnsList` (Array): An array of URN strings (with ROI) for all rectangles that contain the clicked point. An empty array `[]` is passed if no rectangles contain the point.
-
-*   **Returns:** `(HMTImageViewer | null)`: An instance of the `HMTImageViewer` class, or `null` if initialization fails (e.g., invalid `elementId` or `urnString`). The viewer's image loading (`info.json` and initial tile) is asynchronous.
+    *   `urnStr` (String): The CITE2 URN for the image. This URN can optionally include an ROI extension (e.g., `@0.1,0.1,0.2,0.2`).
+    *   `options` (Object, optional): An object containing options for the IIIF request.
+        *   `width` (Number, optional): Desired output width in pixels. Aspect ratio is maintained.
+        *   `height` (Number, optional): Desired output height in pixels. Aspect ratio is maintained.
+        *   If both `width` and `height` are provided, the IIIF `!w,h` syntax is used, ensuring the image fits within these dimensions while preserving aspect ratio. The server typically scales based on the dimension that imposes the greater constraint.
+        *   If only `width` is provided, IIIF `w,` syntax is used.
+        *   If only `height` is provided, IIIF `,h` syntax is used.
+        *   If neither `width` nor `height` is provided, the `size` parameter is set to `full`.
+*   **Returns:** (String) The fully formed IIIF Image API URL for a JPG image, or `null` if the URN is invalid.
+    *   If an ROI is specified in `urnStr`, the IIIF `region` parameter will be set to `pct:x,y,w,h` (values scaled 0-100).
+    *   The IIIF `format` parameter is always set to `jpg`.
+    *   The IIIF `rotation` parameter is always set to `0`.
+    *   The IIIF `quality` parameter is always set to `default`.
 
 *   **Example:**
     ```javascript
-    function handleRectangles(urnsString, rectsArray) {
-        console.log("Selected Rectangles URNs:\n", urnsString);
-        console.log("Selected Rectangles Data:", rectsArray);
-        // Update UI with the list of rectangles
-    }
+    const baseUrn = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013';
+    const urnWithRoi = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.25,0.25';
 
-    function handleQuery(matchedUrns) {
-        if (matchedUrns.length > 0) {
-            alert("Clicked in rectangles:\n" + matchedUrns.join('\n'));
-        } else {
-            alert("Clicked outside any rectangle.");
-        }
-    }
+    // Get full image URL
+    const fullImageUrl = HMTIIIF.getIIIFImageUrl(baseUrn);
+    // console.log(fullImageUrl);
+    // Expected: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/full/full/0/default.jpg
 
-    const viewer = HMTImageLib.createViewer(
-        'myViewerDiv',
-        'urn:cite2:hmt:vaimg.2017a:VA012RN_0013',
-        {
-            rectangleSelectedListener: handleRectangles,
-            queryListener: handleQuery
-        }
-    );
+    // Get image with ROI
+    const roiImageUrl = HMTIIIF.getIIIFImageUrl(urnWithRoi);
+    // console.log(roiImageUrl);
+    // Expected: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/pct:10,10,25,25/full/0/default.jpg
+
+    // Get image with specified width
+    const sizedImageUrl = HMTIIIF.getIIIFImageUrl(baseUrn, { width: 800 });
+    // console.log(sizedImageUrl);
+    // Expected: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/full/800,/0/default.jpg
+
+    // Get image with ROI and specified max dimensions
+    const sizedRoiUrl = HMTIIIF.getIIIFImageUrl(urnWithRoi, { width: 200, height: 150 });
+    // console.log(sizedRoiUrl);
+    // Expected: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/pct:10,10,25,25/!200,150/0/default.jpg
     ```
 
-### `HMTImageLib.getIIIFImageUrl(urnString, options = {})`
+### `HMTIIIF.createViewer(containerIdOrElement, urnOrUrns, viewerOptions)`
 
-Generates a IIIF Image API URL for a given HMT image URN.
+Creates and initializes an interactive IIIF image viewer in the specified HTML container. The viewer supports zooming, panning, and interactions for selecting and querying regions of interest (ROIs). Multiple viewer instances can exist on a single page.
 
 *   **Parameters:**
-    *   `urnString` (String): The CITE2 URN for the HMT image. This URN can optionally include a Region of Interest (ROI) suffix (e.g., `...@0.1,0.1,0.5,0.5`).
-    *   `options` (Object, optional): An object to specify IIIF parameters.
-        *   `width` (Number, optional): The desired width of the image in pixels. Aspect ratio is maintained.
-        *   `height` (Number, optional): The desired height of the image in pixels. Aspect ratio is maintained.
-        *   If both `width` and `height` are provided, the image is scaled to fit within the bounds defined by the *larger* of the two dimensions, while maintaining aspect ratio. For example, if requesting `width: 800, height: 600`, an image will be scaled such that its width is 800px (if wider than tall relative to requested aspect) or its height is 600px (if taller than wide relative to requested aspect), and the other dimension is scaled proportionally.
-        *   If an ROI is specified in the `urnString`, the `pct:x,y,w,h` IIIF region parameter is used.
-        *   If no size is requested, `size` is set to `full`.
-        *   The `format` is always `jpg`.
-
-*   **Returns:** `(String | null)`: The fully formed IIIF Image API URL, or `null` if the URN cannot be parsed.
+    *   `containerIdOrElement` (String | HTMLElement): The ID of the HTML element (e.g., a `<div>`) where the viewer canvas should be created, or a direct reference to the HTMLElement.
+    *   `urnOrUrns` (String | Array<String>):
+        *   If a **String**: The CITE2 URN of the image to display. This URN can include an ROI extension, which will be highlighted initially.
+        *   If an **Array of Strings**:
+            *   The first string in the array **must** be the base CITE2 URN for the image.
+            *   Subsequent strings in the array should be URNs for the same base image but with ROI extensions (e.g., `BASE_URN@x,y,w,h`). These ROIs will be highlighted initially.
+            *   All URNs in the array must refer to the same base image.
+    *   `viewerOptions` (Object, optional): An object for configuring viewer callbacks.
+        *   `onRectangleSelected` (Function, optional): A callback function invoked when the user draws a new rectangle (ROI) on the image.
+            *   **Callback argument:** `allUrnsString` (String) - A newline-separated string containing all currently highlighted ROI URNs (including the newly added one).
+        *   `onQuery` (Function, optional): A callback function invoked when the user Shift-clicks on the image.
+            *   **Callback argument:** `matchingUrns` (Array<String>) - An array of URNs (with ROI extensions) for any highlighted rectangles that contain the clicked point. An empty array is passed if no rectangles match.
+*   **Returns:** (Object) A viewer instance object with methods to interact with the viewer (see [Viewer Instance API](#viewer-instance-api)), or `null` if the container element is not found.
 
 *   **Example:**
+    ```html
+    <div id="viewer1" style="width: 600px; height: 400px; border: 1px solid black;"></div>
+    <div id="viewer2" style="width: 500px; height: 350px; border: 1px solid blue;"></div>
+    <ul id="roiList"></ul>
+    <div id="queryResult"></div>
+    ```
     ```javascript
-    const fullImageUrl = HMTImageLib.getIIIFImageUrl("urn:cite2:hmt:vaimg.2017a:VA012RN_0013");
-    // Result: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/full/full/0/default.jpg
+    // Basic viewer
+    const viewer1 = HMTIIIF.createViewer('viewer1', 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013');
 
-    const sizedImageUrl = HMTImageLib.getIIIFImageUrl("urn:cite2:hmt:vaimg.2017a:VA012RN_0013", { width: 300 });
-    // Result: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/full/300,/0/default.jpg
+    // Viewer with initial ROIs and callbacks
+    const initialUrns = [
+        'urn:cite2:hmt:vaimg.2017a:VA013RN_0014', // Base image
+        'urn:cite2:hmt:vaimg.2017a:VA013RN_0014@0.1,0.1,0.2,0.2', // ROI 1
+        'urn:cite2:hmt:vaimg.2017a:VA013RN_0014@0.5,0.5,0.1,0.3'  // ROI 2
+    ];
 
-    const roiImageUrl = HMTImageLib.getIIIFImageUrl("urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.5,0.4,0.15", { width: 200 });
-    // Result: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/pct:25,50,40,15/200,/0/default.jpg
+    const viewer2 = HMTIIIF.createViewer(document.getElementById('viewer2'), initialUrns, {
+        onRectangleSelected: function(allUrnsString) {
+            console.log("Rectangles selected/updated. All URNs:\n" + allUrnsString);
+            const rois = allUrnsString.split('\n').filter(urn => urn.trim() !== '');
+            const roiListEl = document.getElementById('roiList');
+            roiListEl.innerHTML = rois.map(urn => `<li>${urn} <button onclick="removeRoiFromViewer2('${urn}')">X</button></li>`).join('');
+        },
+        onQuery: function(matchingUrns) {
+            const queryResultEl = document.getElementById('queryResult');
+            if (matchingUrns.length > 0) {
+                queryResultEl.textContent = "Clicked point is within: " + matchingUrns.join(', ');
+            } else {
+                queryResultEl.textContent = "Clicked point is not within any highlighted ROI.";
+            }
+        }
+    });
+    
+    // Helper for the example above
+    function removeRoiFromViewer2(urn) {
+        if (viewer2) {
+            viewer2.removeROI(urn);
+            // The onRectangleSelected callback won't fire on remove, so manually update list
+            const currentRois = viewer2.getROIs();
+            const roiListEl = document.getElementById('roiList');
+            roiListEl.innerHTML = currentRois.map(u => `<li>${u} <button onclick="removeRoiFromViewer2('${u}')">X</button></li>`).join('');
+        }
+    }
     ```
 
-### `HMTImageLib._parseURN(urnString)` (Internal/Advanced)
+## 5. Viewer Instance API
 
-A helper function to parse an HMT CITE2 URN string into its components. While exported, it's primarily for internal use or advanced scenarios.
+The object returned by `HMTIIIF.createViewer` provides methods to programmatically interact with the viewer instance.
 
-*   **Parameters:**
-    *   `urnString` (String): The CITE2 URN string.
-*   **Returns:** `(Object | null)`: An object containing parsed URN components, or `null` if parsing fails.
-    *   **Object Structure:**
-        ```javascript
-        {
-            baseUrn: String,         // URN without ROI, e.g., "urn:cite2:hmt:vaimg.2017a:VA012RN_0013"
-            namespace: String,       // e.g., "hmt"
-            collectionPart1: String, // e.g., "vaimg"
-            collectionPart2: String, // e.g., "2017a"
-            objectId: String,        // e.g., "VA012RN_0013"
-            roi: {                   // null if no ROI in URN
-                x: Number,           // Percentage (0.0-1.0)
-                y: Number,           // Percentage (0.0-1.0)
-                w: Number,           // Percentage (0.0-1.0)
-                h: Number            // Percentage (0.0-1.0)
-            } | null
-        }
-        ```
+### `viewer.destroy()`
 
-## 4. HMTImageViewer Instance
-
-An instance of `HMTImageViewer` is returned by `HMTImageLib.createViewer()`. It represents a single image viewer on the page.
-
-### Properties (Internal)
-
-The viewer instance manages internal state like current scale, view origin, loaded image data, and the list of drawn rectangles. These are generally not intended for direct manipulation.
-
-### Methods
-
-#### `async viewer.setUrn(newUrnString)`
-
-Loads a new image into the viewer, replacing the current one. This clears any existing highlighted rectangles.
-
-*   **Parameters:**
-    *   `newUrnString` (String): The CITE2 URN of the new HMT image to display.
-*   **Returns:** `Promise<void>`: A promise that resolves after the new image's `info.json` has been fetched and an attempt to load the initial image view has been made. It rejects if the URN is invalid.
-*   **Side Effects:**
-    *   Clears all previously drawn rectangles.
-    *   Calls the `rectangleSelectedListener` (if provided) with empty arguments.
-    *   Calls the `queryListener` (if provided) with an empty list.
-
-#### `viewer.removeRectangle(urnWithRoiToRemove)`
-
-Removes a specific highlighted rectangle from the viewer.
-
-*   **Parameters:**
-    *   `urnWithRoiToRemove` (String): The full URN string of the rectangle to remove, including its ROI suffix (e.g., `"urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.2,0.3,0.4"`).
-*   **Returns:** `Boolean`: `true` if a rectangle with the given URN was found and removed, `false` otherwise.
-*   **Side Effects:**
-    *   Redraws the image without the removed rectangle.
-    *   Calls the `rectangleSelectedListener` with the updated list of rectangles.
-
-#### `viewer.destroy()`
-
-Cleans up the viewer instance, removing its canvas from the DOM and detaching all event listeners. This should be called if the viewer is no longer needed, especially in single-page applications, to prevent memory leaks.
+Removes the viewer from the DOM and cleans up associated event listeners.
 
 *   **Parameters:** None.
-*   **Returns:** `void`.
+*   **Returns:** `undefined`.
+*   **Example:**
+    ```javascript
+    // Assuming 'myViewer' is an instance created by HMTIIIF.createViewer
+    // myViewer.destroy();
+    ```
 
-## 5. Homer Multitext (HMT) CITE2 URN Format
+### `viewer.addROI(urnWithROI)`
 
-Images are identified with CITE2 URNs, which have 5 components separated by colons:
-`urn:cite2:{namespace}:{collection-version}:{object-id}`
+Programmatically adds a new ROI to be highlighted on the viewer.
 
-*   **Example:** `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`
-    *   `namespace`: `hmt`
-    *   `collection-version`: `vaimg.2017a` (parsed into `collectionPart1`="vaimg", `collectionPart2`="2017a")
-    *   `object-id`: `VA012RN_0013`
+*   **Parameters:**
+    *   `urnWithROI` (String): The full CITE2 URN of the image including the ROI extension (e.g., `BASE_URN@x,y,w,h`). The base image part of this URN must match the image currently loaded in the viewer.
+*   **Returns:** (Boolean) `true` if the ROI was successfully added (and was not a duplicate), `false` otherwise (e.g., invalid URN format, base URN mismatch, or duplicate).
+*   **Note:** This method updates the visual display. If you need to update an external list of ROIs, you should call `viewer.getROIs()` afterwards or manage your list separately.
+*   **Example:**
+    ```javascript
+    // const success = myViewer.addROI('urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.7,0.7,0.1,0.1');
+    // if (success) console.log("ROI added programmatically.");
+    ```
 
-**Region of Interest (ROI) Extension:**
-A URN can be extended with an ROI by appending `@x,y,w,h` to the `object-id` component.
-`x,y,w,h` are decimal values between 0.0 and 1.0 representing percentages of the image's total width and height.
+### `viewer.removeROI(urnWithROI)`
 
-*   `(x,y)`: Coordinates of the top-left corner of the rectangle.
-*   `w`: Width of the rectangle.
-*   `h`: Height of the rectangle.
+Programmatically removes a highlighted ROI from the viewer.
 
-*   **Example with ROI:** `urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.2,0.35,0.4`
-    This represents a rectangle starting at 10% from the left and 20% from the top, with a width of 35% of the image width and a height of 40% of the image height.
+*   **Parameters:**
+    *   `urnWithROI` (String): The full CITE2 URN with ROI extension of the rectangle to remove.
+*   **Returns:** (Boolean) `true` if an ROI matching the URN was found and removed, `false` otherwise.
+*   **Note:** This method updates the visual display.
+*   **Example:**
+    ```javascript
+    // const removed = myViewer.removeROI('urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.7,0.7,0.1,0.1');
+    // if (removed) console.log("ROI removed programmatically.");
+    ```
 
-## 6. Viewer Interaction Modes & Cursors
+### `viewer.getROIs()`
 
-The `HMTImageViewer` supports three main interaction modes, indicated by different mouse cursors:
+Retrieves a list of all currently highlighted ROI URNs in the viewer.
 
-1.  **Standard Mode (Zoom & Pan):**
-    *   **Action:**
-        *   **Zoom:** Use the mouse wheel.
-        *   **Pan:** Click and drag the image.
-    *   **Cursor:** `grab` (becomes `grabbing` while panning).
+*   **Parameters:** None.
+*   **Returns:** (Array<String>) An array of URN strings, each with an ROI extension, representing the currently highlighted rectangles.
+*   **Example:**
+    ```javascript
+    // const currentRois = myViewer.getROIs();
+    // console.log("Current ROIs:", currentRois);
+    ```
+
+## 6. Viewer Interaction Modes
+
+The viewer supports three main interaction modes:
+
+1.  **Standard Image Viewing (Zoom/Pan):**
+    *   **Zoom:** Use the mouse wheel to zoom in and out. The zoom is centered on the mouse cursor's position.
+    *   **Pan:** Click and drag the image to pan.
+    *   **Cursor:** `grab` (when ready to pan), `grabbing` (while panning).
 
 2.  **Rectangle Selection Mode:**
-    *   **Action:** Hold down the **Option (Alt)** key, then click and drag on the image to draw a rectangle.
-    *   **Cursor:** `crosshair` (when Option/Alt key is pressed or during selection drag).
-    *   **Result:** Drawn rectangles are filled with a random semi-transparent color. The `rectangleSelectedListener` is called.
+    *   **Activation:** Hold down the **Option (Alt)** key, then click and drag on the image.
+    *   **Functionality:** Allows the user to draw a new rectangular ROI. Upon releasing the mouse button, the coordinates of the new rectangle (as a URN with ROI extension) are added to the viewer's list of highlighted ROIs. The `onRectangleSelected` callback (if provided) is invoked.
+    *   **Cursor:** `crosshair`.
 
 3.  **Query Mode:**
-    *   **Action:** Hold down the **Shift** key, then click on the image.
-    *   **Cursor:** `help` (question mark, when Shift key is pressed).
-    *   **Result:** The `queryListener` is called with a list of URNs for any highlighted rectangles that contain the clicked point.
+    *   **Activation:** Hold down the **Shift** key and click on the image.
+    *   **Functionality:** Checks if the clicked point falls within any of the currently highlighted ROIs. The `onQuery` callback (if provided) is invoked with a list of URNs for all matching ROIs.
+    *   **Cursor:** `help`.
+
+Highlighted ROIs are drawn with a random semi-transparent fill color and no border. The highlights correctly scale and move with the image during zoom and pan operations. The viewer preserves the aspect ratio of the displayed image, potentially leading to letterboxing or pillarboxing within the canvas.

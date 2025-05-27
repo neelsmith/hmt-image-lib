@@ -1,0 +1,2174 @@
+### USER
+  
+I want to build a javascript library named `hmt-iiif-lib.js`, packaged so that I can add it to a GitHub repo and use it via jsDeliver. The package should include two functions named `createViewer` and `getIIIFImageUrl`.
+  
+`createViewer` accepts a parameter taking _either_ a string value for a CITE2 URN identifying an image from the Homer Multitext project (HMT) available through the IIIF protocol, or an Array of strings. For the Array option, each string refers to the same base image but with an extension identifying a rectangular area of interest (ROI) on the image. ROI extensions are in the form
+`@x,y,w,h` where `x,y,w,h` are all expressed as percentages from 0 to 1, and appended to the basic URN for the image. The viewer should support three separate modes of interaction with the image.
+  
+Here's the information you need to define IIIF requests for the Homer Muiltitext project.
+  
+Protocol: http
+Server: www.homermultitext.org/iipsrv?IIIF=
+Prefix: The information we need to construct the correct prefix is included in the image identifier. Images are identified with CITE2 URN, which have 5 components separated by colons. The IIIF prefix for the HMT server is constructed from a base path `/project/homer/pyramidal/deepzoom`, to which we append three further elements, joining each with a slash `/`. The first piece we append is the URN's namespace, the third colon-delimited component of the URN; the second and third pieces we append are taken from the collection component, which is the fourth colon-delimited part of the URN. This component has two parts separated by a period: we append each of these separately.
+Image: images in the HMT service are in TIF format. To form the correct image identify, append `.tif` to the object identifier (final component of the CITE2 URN.)
+  
+Here's a complete example: for the CITE2 URN `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`, the namespace is `hmt` (third component); the workspace component is `vaimg.2017a` (fourth component); the object identifier is `VA012RN_0013`.  We form the IIIF prefix by joinging to the base path `/project/homer/pyramidal/deepzoom` the namespace value, and two period-separted parts of the collection value. The full  IIIF prefix is therefore  `/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a`. We form the image identifier by appending `.tif` to the objectcompnonent and get `VA012RN_0013.tif`. A complete `info` request for this image on the HMT IIIF service would therefore be `http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/info.json`
+  
+  
+1. The first mode is a standard image viewer that allows the user to zoom and pan the image.  The design should support including multiple instances of a viewer on a single web page, with each viewer supporting panning and zooming of the image it was constructed with. The IIIF viewer should be built from scratch rather than using a library like OpenSeaDragon.  Use anonymous CORS to avoid restrictions on cross-origin access. Any rectangles identified with ROI extensions should be drawn with a random semi-transparent fill color, and no border. Take care to ensure that highlighted areas highlight the same area of the image when the user zooms or pans the image.
+2. The second mode is a rectangle selection mode, which is activated when the user holds down the option key and clicks and drags on the image.  In this mode, the user can draw a rectangle on the image, and the coordinates of the rectangle are returned to a listener function. The coordinates should be formatted as an x,y pair expressed as percentages from 0 to 1, and appended to the URN for the example.  The return value should be a list of these URNs separated by newline characters, so that the user can draw multiple rectangles and get a single string of coordinates back.  The user should be able to draw multiple rectangles, and the coordinates of each rectangle should be returned in a single multiline string, one URN per line.
+3. The third mode is a query mode, which is activated when the user holds down the shift key and clicks on the image. In this mode, the image viewer should check to see if the point that the user has clicked is within the bounds of any of the highlighted rectangles. Note that since rectangles could overlap, the point could lie within zero, one or more rectangles.  A list of the rectangles should be passed to a listener function. If the point lies within zero rectangles, an empty list should be passed to the listener function. The rectangles should be identified as image URNs with ROI extension, i.e. @x,y,w,h where x,y,w,h are all expressed as percentages from 0 to 1, and appended to the basic URN for the image.
+  
+**Tests**: To test `createViewer`, please write two HTML files. One should test displaying two images with the URNs `urn:cite2:hmt:vaimg.2017a:VA012RN_0013` and `urn:cite2:hmt:vaimg.2017a:VA013RN_0014`. The second HTML file should test the rectangle selection and query modes.  Allow the user to enter a URN (default: `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`), and display a list of highlighted retangles if any. Update the list when the user adds a new rectangle by option-clicking. When the user shift-clicks, display a message with the URN of any rectangles that contain the clicked point. Note that since rectangles could overlap, the point could lie within zero, one or more rectangles.  A list of the rectangles should be passed to a listener function. If the point lies within zero rectangles, an empty list should be passed to the listener function. The rectangles should be identified as image URNs with ROI extension, i.e. @x,y,w,h where x,y,w,h are all expressed as percentages from 0 to 1, and appended to the basic URN for the image. Display the current list of any highlighted rectangles, and allow users to remove a rectangle from the current list.
+  
+  
+The second function, `getIIIFImageUrl`, should accept a URN for an image, and return a string with the IIIF request for the image. The function should allow optional parameters to set an output width or height, but should ensure that aspect is maintained. If both width and height are set, the function should use the larger of the two to determine the scaling factor. If the URN includes an ROI extension, the function should use set the IIIF `pct:x,y,w,h` parameters the values in the extension scaled from 0 to 100. For example, if the URN is `urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15`, the IIIF request should include `pct:25,50,40,15`. The function should also set the IIIF `size` parameter to the width and height of the image in pixels, scaled to the requested size. If no size is requested, the function should set the IIIF `size` parameter to `full`. The function should also set the IIIF `format` parameter to `jpg`.
+The function should return a string with the full IIIF request for the image, including all parameters.
+  
+**Test**:  Please write an HTML test page that allows a user to enter an image URN and optional values for width and height, displays the URN value on the page, and then displays the image retrieved with the IIIF request.
+
+### ASSISTANT
+Okay, this is a comprehensive project. I'll structure the `hmt-iiif-lib.js` library and then provide the HTML test files.
+
+Here's the `hmt-iiif-lib.js` file:
+
+```javascript
+// hmt-iiif-lib.js
+(function(window) {
+    'use strict';
+
+    const IIIF_SERVER_PROTOCOL = 'http';
+    const IIIF_SERVER_HOST = 'www.homermultitext.org';
+    const IIIF_SERVER_PATH = '/iipsrv?IIIF=';
+    const HMT_IIIF_PREFIX_BASE = '/project/homer/pyramidal/deepzoom';
+
+    // --- Helper: Parse URN ---
+    function parseURN(urnStr) {
+        if (typeof urnStr !== 'string') {
+            return { valid: false, error: "URN must be a string." };
+        }
+
+        const parts = urnStr.split('@');
+        const baseUrn = parts[0];
+        let roi = null;
+
+        if (parts.length > 2) {
+            return { valid: false, error: "Invalid URN format: multiple '@' symbols." };
+        }
+
+        if (parts.length === 2 && parts[1]) {
+            const roiParts = parts[1].split(',');
+            if (roiParts.length === 4) {
+                const [x, y, w, h] = roiParts.map(parseFloat);
+                if ([x, y, w, h].every(val => !isNaN(val) && val >= 0 && val <= 1)) {
+                    roi = { x, y, w, h };
+                } else {
+                    return { valid: false, error: "Invalid ROI format: values must be numbers between 0 and 1." };
+                }
+            } else {
+                return { valid: false, error: "Invalid ROI format: must be x,y,w,h." };
+            }
+        }
+
+        const citeParts = baseUrn.split(':');
+        if (citeParts.length !== 5 || citeParts[0] !== 'urn' || citeParts[1] !== 'cite2') {
+            return { valid: false, error: "Invalid CITE2 URN structure." };
+        }
+
+        const namespace = citeParts[2];
+        const collectionComponent = citeParts[3];
+        const objectId = citeParts[4];
+
+        const collectionParts = collectionComponent.split('.');
+        if (collectionParts.length !== 2) {
+            return { valid: false, error: "Invalid URN collection component format." };
+        }
+
+        return {
+            valid: true,
+            baseUrn: baseUrn,
+            fullUrn: urnStr,
+            namespace: namespace,
+            collectionParts: collectionParts,
+            objectId: objectId,
+            roi: roi,
+            error: null
+        };
+    }
+
+    // --- Helper: Random Color ---
+    function getRandomColor() {
+        const r = Math.floor(Math.random() * 200); // Keep it a bit dark for visibility
+        const g = Math.floor(Math.random() * 200);
+        const b = Math.floor(Math.random() * 200);
+        return `rgba(${r},${g},${b},0.5)`; // Semi-transparent
+    }
+
+    // --- Helper: Debounce ---
+    function debounce(func, delay) {
+        let timeout;
+        return function(...args) {
+            const context = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), delay);
+        };
+    }
+
+    // --- getIIIFImageUrl Function ---
+    function getIIIFImageUrl(urnStr, options = {}) {
+        const parsed = parseURN(urnStr);
+        if (!parsed.valid) {
+            console.error("getIIIFImageUrl Error:", parsed.error);
+            return null;
+        }
+
+        const iiifPrefix = `${HMT_IIIF_PREFIX_BASE}/${parsed.namespace}/${parsed.collectionParts[0]}/${parsed.collectionParts[1]}`;
+        const imageIdentifier = `${parsed.objectId}.tif`;
+        
+        const baseUrl = `${IIIF_SERVER_PROTOCOL}://${IIIF_SERVER_HOST}${IIIF_SERVER_PATH}${iiifPrefix}/${imageIdentifier}`;
+
+        let region = 'full';
+        if (parsed.roi) {
+            region = `pct:${parsed.roi.x * 100},${parsed.roi.y * 100},${parsed.roi.w * 100},${parsed.roi.h * 100}`;
+        }
+
+        let size = 'full';
+        if (options.width && options.height) {
+            size = `!${options.width},${options.height}`;
+        } else if (options.width) {
+            size = `${options.width},`;
+        } else if (options.height) {
+            size = `,${options.height}`;
+        }
+        // If ROI is present, size applies to the region. If no size option, IIIF default is to return region at its 'full' size.
+
+        const rotation = '0';
+        const quality = 'default';
+        const format = 'jpg';
+
+        return `${baseUrl}/${region}/${size}/${rotation}/${quality}.${format}`;
+    }
+
+    // --- createViewer Function ---
+    function createViewer(containerIdOrElement, urnOrUrns, viewerOptions = {}) {
+        const container = typeof containerIdOrElement === 'string' ? document.getElementById(containerIdOrElement) : containerIdOrElement;
+        if (!container) {
+            console.error("Viewer container not found.");
+            return null;
+        }
+        container.innerHTML = ''; // Clear previous content
+
+        const canvas = document.createElement('canvas');
+        // Style canvas for fixed size, or use ResizeObserver for responsive
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        canvas.style.border = "1px solid #ccc";
+        container.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas resolution to match its display size
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+
+        let state = {
+            baseParsedURN: null,
+            originalWidth: 0,
+            originalHeight: 0,
+            currentZoom: 1.0, // zoom factor: 1.0 = original pixels match screen pixels if canvas were large enough
+            viewCenterX_orig: 0, // center of view in original image coordinates
+            viewCenterY_orig: 0,
+            topLeftX_orig_clamped: 0, // Top-left of visible part in original image coords (clamped)
+            topLeftY_orig_clamped: 0,
+            loadedIIIFImage: null,
+            highlightedROIs: [], // { urn, roi: {x,y,w,h}, color }
+            isPanning: false,
+            panStart: { x: 0, y: 0 },
+            panStartViewCenter: { x: 0, y: 0 },
+            isSelecting: false,
+            selectionStartCanvas: { x: 0, y: 0 },
+            currentSelectionRectCanvas: null, // {x,y,w,h} on canvas
+            imageLoadError: null,
+            isLoadingImage: false,
+            options: {
+                onRectangleSelected: viewerOptions.onRectangleSelected || function() {},
+                onQuery: viewerOptions.onQuery || function() {},
+                minZoomFactor: 0.1, // Relative to "fit to screen"
+                maxZoomFactor: 10,  // Relative to "1 original pixel = 1 canvas pixel"
+            }
+        };
+
+        function parseInitialUrns(inputUrns) {
+            const initialRois = [];
+            let baseUrnToUse = null;
+
+            const urnArray = Array.isArray(inputUrns) ? inputUrns : [inputUrns];
+
+            for (let i = 0; i < urnArray.length; i++) {
+                const parsed = parseURN(urnArray[i]);
+                if (!parsed.valid) {
+                    console.error("Invalid URN provided for viewer:", parsed.error, urnArray[i]);
+                    if (i === 0) { // Critical if first URN is bad
+                        state.imageLoadError = `Invalid base URN: ${parsed.error}`;
+                        return false;
+                    }
+                    continue; // Skip bad ROIs
+                }
+
+                if (i === 0) {
+                    state.baseParsedURN = parsed; // Uses objectId, namespace etc. from first URN
+                    baseUrnToUse = parsed.baseUrn;
+                } else if (parsed.baseUrn !== baseUrnToUse) {
+                    console.warn("All URNs in array must share the same base image. Skipping:", urnArray[i]);
+                    continue;
+                }
+
+                if (parsed.roi) {
+                    // Avoid duplicates if same ROI URN is passed multiple times
+                    if (!initialRois.some(r => r.urn === parsed.fullUrn)) {
+                         initialRois.push({
+                            urn: parsed.fullUrn, // Store the full URN as given
+                            roi: parsed.roi, // {x,y,w,h} in percentages
+                            color: getRandomColor()
+                        });
+                    }
+                }
+            }
+            state.highlightedROIs = initialRois;
+            return state.baseParsedURN != null;
+        }
+        
+        function fetchImageInfo() {
+            if (!state.baseParsedURN) {
+                console.error("Base URN not set, cannot fetch image info.");
+                state.imageLoadError = "Base URN not properly parsed.";
+                redraw(); // Show error on canvas
+                return;
+            }
+            const infoUrl = `${IIIF_SERVER_PROTOCOL}://${IIIF_SERVER_HOST}${IIIF_SERVER_PATH}${HMT_IIIF_PREFIX_BASE}/${state.baseParsedURN.namespace}/${state.baseParsedURN.collectionParts[0]}/${state.baseParsedURN.collectionParts[1]}/${state.baseParsedURN.objectId}.tif/info.json`;
+            
+            fetch(infoUrl, { mode: 'cors' })
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response.json();
+                })
+                .then(info => {
+                    state.originalWidth = info.width;
+                    state.originalHeight = info.height;
+                    state.viewCenterX_orig = state.originalWidth / 2;
+                    state.viewCenterY_orig = state.originalHeight / 2;
+                    
+                    // Initial zoom to fit image to canvas
+                    const scaleX = canvas.width / state.originalWidth;
+                    const scaleY = canvas.height / state.originalHeight;
+                    state.currentZoom = Math.min(scaleX, scaleY);
+                    state.options.minZoomFactor = state.currentZoom * 0.1; // Adjust minZoom based on fit
+                    
+                    requestImageAndRedraw();
+                })
+                .catch(error => {
+                    console.error("Error fetching IIIF info.json:", error);
+                    state.imageLoadError = `Failed to load image info: ${error.message}. Check console for details.`;
+                    redraw(); // Show error state on canvas
+                });
+        }
+
+        const debouncedRequestImageAndRedraw = debounce(requestImageAndRedraw, 250);
+
+        function requestImageAndRedraw() {
+            if (!state.originalWidth || !state.originalHeight || state.isLoadingImage) return;
+            state.isLoadingImage = true;
+            state.imageLoadError = null; // Clear previous errors
+
+            // Calculate viewport in original image coordinates
+            const viewPortWidth_orig = canvas.width / state.currentZoom;
+            const viewPortHeight_orig = canvas.height / state.currentZoom;
+
+            let topLeftX_orig = state.viewCenterX_orig - viewPortWidth_orig / 2;
+            let topLeftY_orig = state.viewCenterY_orig - viewPortHeight_orig / 2;
+
+            // Clamp to image boundaries
+            state.topLeftX_orig_clamped = Math.max(0, Math.min(topLeftX_orig, state.originalWidth - viewPortWidth_orig));
+            state.topLeftY_orig_clamped = Math.max(0, Math.min(topLeftY_orig, state.originalHeight - viewPortHeight_orig));
+            
+            // If clamping changed topLeft, it means view was partly outside. Adjust actual topLeft to reflect this.
+            // This is subtle. We want the region to be correct for IIIF.
+            // The region width/height should be viewPortWidth_orig, viewPortHeight_orig unless these are larger than original image.
+            const regionX = Math.max(0, topLeftX_orig);
+            const regionY = Math.max(0, topLeftY_orig);
+            const regionW = Math.min(viewPortWidth_orig, state.originalWidth - regionX);
+            const regionH = Math.min(viewPortHeight_orig, state.originalHeight - regionY);
+            
+            const iiifRegion = `${Math.round(regionX)},${Math.round(regionY)},${Math.round(regionW)},${Math.round(regionH)}`;
+            const iiifSize = `${canvas.width},${canvas.height}`; // Request image scaled to canvas size (IIIF '!w,h' would be better, but problem asks for w,h)
+                                                              // using `canvas.width,` or `,canvas.height` or `!cW,cH` is more typical. `w,h` might distort.
+                                                              // Let's use `!w,h` as it's best practice for IIIF.
+            const iiifSizeParam = `!${canvas.width},${canvas.height}`;
+
+
+            const imageUrl = `${IIIF_SERVER_PROTOCOL}://${IIIF_SERVER_HOST}${IIIF_SERVER_PATH}` +
+                             `${HMT_IIIF_PREFIX_BASE}/${state.baseParsedURN.namespace}/${state.baseParsedURN.collectionParts[0]}/${state.baseParsedURN.collectionParts[1]}/${state.baseParsedURN.objectId}.tif` +
+                             `/${iiifRegion}/${iiifSizeParam}/0/default.jpg`;
+
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.onload = () => {
+                state.loadedIIIFImage = img;
+                state.isLoadingImage = false;
+                redraw();
+            };
+            img.onerror = (e) => {
+                console.error("Error loading IIIF image tile:", imageUrl, e);
+                state.imageLoadError = "Error loading image tile. See console.";
+                state.isLoadingImage = false;
+                state.loadedIIIFImage = null; // Ensure no stale image is drawn
+                redraw();
+            };
+            img.src = imageUrl;
+            redraw(); // Show loading state
+        }
+
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (state.imageLoadError) {
+                ctx.fillStyle = 'red';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(state.imageLoadError, canvas.width / 2, canvas.height / 2);
+                if (state.isLoadingImage) {
+                     ctx.fillText("Loading image...", canvas.width / 2, canvas.height / 2 + 20);
+                }
+                return;
+            }
+            
+            if (state.isLoadingImage && !state.loadedIIIFImage) { // Show loading only if no image is currently displayed
+                ctx.fillStyle = 'gray';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("Loading image...", canvas.width / 2, canvas.height / 2);
+            }
+
+            if (state.loadedIIIFImage) {
+                // The loadedIIIFImage is already cropped and scaled by IIIF to fit the canvas.
+                // We need to calculate the offset if the requested region was clamped differently
+                // than state.topLeftX_orig_clamped.
+                // The IIIF image corresponds to a region starting at some `actualRegionX_orig`
+                // and we want to display the part that corresponds to `state.topLeftX_orig_clamped`.
+                // This is simplified because IIIF gives us an image scaled to canvas.width/height
+                // from the requested region. We just draw it at 0,0.
+                ctx.drawImage(state.loadedIIIFImage, 0, 0, canvas.width, canvas.height);
+            } else if (!state.isLoadingImage && !state.imageLoadError && !state.baseParsedURN) {
+                // Initial state before info.json loaded or if base URN was bad
+                ctx.fillStyle = 'gray';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("Initializing viewer...", canvas.width / 2, canvas.height / 2);
+                return;
+            } else if (!state.isLoadingImage && !state.imageLoadError && !state.originalWidth) {
+                ctx.fillStyle = 'gray';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("Loading image information...", canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+
+            // Draw highlighted ROIs
+            state.highlightedROIs.forEach(item => {
+                const roi = item.roi; // {x,y,w,h} in percentages of original image
+                const roi_x_orig = roi.x * state.originalWidth;
+                const roi_y_orig = roi.y * state.originalHeight;
+                const roi_w_orig = roi.w * state.originalWidth;
+                const roi_h_orig = roi.h * state.originalHeight;
+
+                // Convert ROI original coordinates to canvas coordinates
+                const canvas_roi_x = (roi_x_orig - state.topLeftX_orig_clamped) * state.currentZoom;
+                const canvas_roi_y = (roi_y_orig - state.topLeftY_orig_clamped) * state.currentZoom;
+                const canvas_roi_w = roi_w_orig * state.currentZoom;
+                const canvas_roi_h = roi_h_orig * state.currentZoom;
+                
+                ctx.fillStyle = item.color;
+                ctx.fillRect(canvas_roi_x, canvas_roi_y, canvas_roi_w, canvas_roi_h);
+            });
+
+            // Draw current selection rectangle (if any)
+            if (state.isSelecting && state.currentSelectionRectCanvas) {
+                ctx.fillStyle = "rgba(0, 100, 255, 0.3)";
+                ctx.strokeStyle = "rgba(0, 100, 255, 0.8)";
+                ctx.lineWidth = 1;
+                const r = state.currentSelectionRectCanvas;
+                ctx.fillRect(r.x, r.y, r.w, r.h);
+                ctx.strokeRect(r.x, r.y, r.w, r.h);
+            }
+        }
+
+        // Event Handlers
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            if (!state.originalWidth) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const mouseX_canvas = e.clientX - rect.left;
+            const mouseY_canvas = e.clientY - rect.top;
+
+            // Convert mouse position to original image coordinates
+            const mouseX_orig = state.topLeftX_orig_clamped + mouseX_canvas / state.currentZoom;
+            const mouseY_orig = state.topLeftY_orig_clamped + mouseY_canvas / state.currentZoom;
+
+            const zoomFactor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+            const newZoom = state.currentZoom * zoomFactor;
+
+            // Clamp zoom
+            state.currentZoom = Math.max(state.options.minZoomFactor, Math.min(newZoom, state.options.maxZoomFactor));
+            
+            // Adjust view center so mouse point stays in same place
+            state.viewCenterX_orig = mouseX_orig - (mouseX_canvas / state.currentZoom) + ( (canvas.width / state.currentZoom) /2 );
+            state.viewCenterY_orig = mouseY_orig - (mouseY_canvas / state.currentZoom) + ( (canvas.height / state.currentZoom) /2 );
+
+            debouncedRequestImageAndRedraw();
+        });
+
+        canvas.addEventListener('mousedown', e => {
+            if (!state.originalWidth) return;
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+
+            if (e.altKey || e.metaKey) { // Option key (altKey on Win/Linux, metaKey sometimes for Mac Option)
+                state.isSelecting = true;
+                state.isPanning = false; // Ensure panning doesn't also happen
+                state.selectionStartCanvas = { x: currentX, y: currentY };
+                state.currentSelectionRectCanvas = { x: currentX, y: currentY, w: 0, h: 0 };
+            } else if (!e.shiftKey) { // Not shift (query) or alt/meta (select) -> pan
+                state.isPanning = true;
+                state.isSelecting = false;
+                state.panStart = { x: e.clientX, y: e.clientY };
+                state.panStartViewCenter = { x: state.viewCenterX_orig, y: state.viewCenterY_orig };
+            }
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            if (!state.originalWidth) return;
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+
+            if (state.isPanning) {
+                const dx_canvas = e.clientX - state.panStart.x;
+                const dy_canvas = e.clientY - state.panStart.y;
+
+                // Convert canvas delta to original image delta
+                const dx_orig = dx_canvas / state.currentZoom;
+                const dy_orig = dy_canvas / state.currentZoom;
+
+                state.viewCenterX_orig = state.panStartViewCenter.x - dx_orig;
+                state.viewCenterY_orig = state.panStartViewCenter.y - dy_orig;
+                debouncedRequestImageAndRedraw();
+            } else if (state.isSelecting) {
+                const x = Math.min(state.selectionStartCanvas.x, currentX);
+                const y = Math.min(state.selectionStartCanvas.y, currentY);
+                const w = Math.abs(state.selectionStartCanvas.x - currentX);
+                const h = Math.abs(state.selectionStartCanvas.y - currentY);
+                state.currentSelectionRectCanvas = { x, y, w, h };
+                redraw(); // Redraw for live selection rectangle
+            }
+        });
+
+        canvas.addEventListener('mouseup', e => {
+            if (!state.originalWidth) return;
+            
+            if (state.isPanning) {
+                state.isPanning = false;
+                // Final image request already triggered by mousemove's debounced call
+            } else if (state.isSelecting) {
+                state.isSelecting = false;
+                const rect = state.currentSelectionRectCanvas;
+                state.currentSelectionRectCanvas = null; // Clear temp rect
+
+                if (rect && rect.w > 0 && rect.h > 0) { // Valid rectangle
+                    // Convert canvas rect to original image percentage ROI
+                    const roi_x1_orig = state.topLeftX_orig_clamped + rect.x / state.currentZoom;
+                    const roi_y1_orig = state.topLeftY_orig_clamped + rect.y / state.currentZoom;
+                    const roi_x2_orig = state.topLeftX_orig_clamped + (rect.x + rect.w) / state.currentZoom;
+                    const roi_y2_orig = state.topLeftY_orig_clamped + (rect.y + rect.h) / state.currentZoom;
+
+                    const roi_x_pct = Math.max(0, Math.min(1, roi_x1_orig / state.originalWidth));
+                    const roi_y_pct = Math.max(0, Math.min(1, roi_y1_orig / state.originalHeight));
+                    const roi_w_pct = Math.max(0, Math.min(1 - roi_x_pct, (roi_x2_orig - roi_x1_orig) / state.originalWidth));
+                    const roi_h_pct = Math.max(0, Math.min(1 - roi_y_pct, (roi_y2_orig - roi_y1_orig) / state.originalHeight));
+
+                    if (roi_w_pct > 0 && roi_h_pct > 0) {
+                        const newRoiUrn = `${state.baseParsedURN.baseUrn}@${roi_x_pct.toFixed(4)},${roi_y_pct.toFixed(4)},${roi_w_pct.toFixed(4)},${roi_h_pct.toFixed(4)}`;
+                        
+                        // Add to highlightedROIs if not already present
+                        if (!state.highlightedROIs.some(r => r.urn === newRoiUrn)) {
+                           state.highlightedROIs.push({
+                                urn: newRoiUrn,
+                                roi: { x: roi_x_pct, y: roi_y_pct, w: roi_w_pct, h: roi_h_pct },
+                                color: getRandomColor()
+                            });
+                        }
+                        
+                        const allUrnsString = state.highlightedROIs.map(r => r.urn).join('\n');
+                        state.options.onRectangleSelected(allUrnsString);
+                    }
+                }
+                redraw(); // Redraw to show new ROI or clear selection rect
+            }
+        });
+        
+        canvas.addEventListener('mouseleave', e => { // If mouse leaves canvas while panning/selecting
+            if (state.isPanning) state.isPanning = false;
+            if (state.isSelecting) {
+                 state.isSelecting = false;
+                 state.currentSelectionRectCanvas = null;
+                 redraw(); // Clear selection rectangle if user abandons it
+            }
+        });
+
+        canvas.addEventListener('click', e => {
+            if (!state.originalWidth || !e.shiftKey) return; // Only for shift-click
+            e.preventDefault(); // Prevent any default shift-click behavior
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX_canvas = e.clientX - rect.left;
+            const clickY_canvas = e.clientY - rect.top;
+
+            const clickX_orig = state.topLeftX_orig_clamped + clickX_canvas / state.currentZoom;
+            const clickY_orig = state.topLeftY_orig_clamped + clickY_canvas / state.currentZoom;
+
+            const clickX_pct = clickX_orig / state.originalWidth;
+            const clickY_pct = clickY_orig / state.originalHeight;
+
+            const matchingUrns = [];
+            state.highlightedROIs.forEach(item => {
+                const r = item.roi;
+                if (clickX_pct >= r.x && clickX_pct <= r.x + r.w &&
+                    clickY_pct >= r.y && clickY_pct <= r.y + r.h) {
+                    matchingUrns.push(item.urn);
+                }
+            });
+            state.options.onQuery(matchingUrns);
+        });
+
+        // Initialize
+        if (!parseInitialUrns(urnOrUrns)) {
+            redraw(); // Show error if base URN parsing failed
+            // Return null or an object that indicates failure? For now, it still returns the instance.
+        } else {
+            fetchImageInfo();
+        }
+
+
+        // Viewer instance API
+        return {
+            destroy: () => {
+                // Remove event listeners, clear container, etc.
+                // For simplicity, this basic version just clears the container.
+                // Robust cleanup would remove specific listeners if they were bound outside.
+                container.innerHTML = '';
+            },
+            addROI: (urnWithROI) => {
+                const parsed = parseURN(urnWithROI);
+                if (parsed.valid && parsed.roi && parsed.baseUrn === state.baseParsedURN.baseUrn) {
+                    if (!state.highlightedROIs.some(r => r.urn === parsed.fullUrn)) {
+                        state.highlightedROIs.push({
+                            urn: parsed.fullUrn,
+                            roi: parsed.roi,
+                            color: getRandomColor()
+                        });
+                        redraw();
+                        // Optionally, call onRectangleSelected here too or let app decide
+                        // const allUrnsString = state.highlightedROIs.map(r => r.urn).join('\n');
+                        // state.options.onRectangleSelected(allUrnsString);
+                        return true;
+                    }
+                }
+                return false;
+            },
+            removeROI: (urnWithROI) => {
+                const initialLength = state.highlightedROIs.length;
+                state.highlightedROIs = state.highlightedROIs.filter(r => r.urn !== urnWithROI);
+                if (state.highlightedROIs.length < initialLength) {
+                    redraw();
+                    // Optionally, call onRectangleSelected here too
+                    // const allUrnsString = state.highlightedROIs.map(r => r.urn).join('\n');
+                    // state.options.onRectangleSelected(allUrnsString);
+                    return true;
+                }
+                return false;
+            },
+            getROIs: () => {
+                return state.highlightedROIs.map(r => r.urn);
+            },
+            getCurrentCanvas: () => canvas, // For debugging or advanced use
+            _getState: () => state // For debugging
+        };
+    }
+
+    // --- Expose to global scope ---
+    window.HMTIIIF = {
+        createViewer: createViewer,
+        getIIIFImageUrl: getIIIFImageUrl,
+        _parseURN: parseURN // Expose for testing or advanced use
+    };
+
+})(window);
+```
+
+Now, the HTML test files:
+
+**1. `test-viewer.html` (Multiple Viewers)**
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMT IIIF Lib - Multiple Viewers Test</title>
+    <script src="hmt-iiif-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .viewer-container { width: 600px; height: 400px; margin-bottom: 20px; border: 1px solid navy; }
+        h1, h2 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1>HMT IIIF Library - Multiple Viewers Test</h1>
+
+    <h2>Viewer 1: urn:cite2:hmt:vaimg.2017a:VA012RN_0013</h2>
+    <div id="viewer1Container" class="viewer-container"></div>
+
+    <h2>Viewer 2: urn:cite2:hmt:vaimg.2017a:VA013RN_0014</h2>
+    <div id="viewer2Container" class="viewer-container"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const urn1 = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013';
+            const urn2 = 'urn:cite2:hmt:vaimg.2017a:VA013RN_0014';
+            // Example with an initial ROI for viewer 1
+            const urn1_with_roi = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.2,0.2';
+
+
+            HMTIIIF.createViewer('viewer1Container', urn1_with_roi);
+            HMTIIIF.createViewer('viewer2Container', urn2);
+
+            // Test with an array of ROIs for viewer 1
+            // HMTIIIF.createViewer('viewer1Container', [
+            //     'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.2,0.2',
+            //     'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.4,0.4,0.1,0.15'
+            // ]);
+        });
+    </script>
+</body>
+</html>
+```
+
+**2. `test-interactive.html` (Rectangle Selection and Query Modes)**
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMT IIIF Lib - Interactive Test</title>
+    <script src="hmt-iiif-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; display: flex; gap: 20px; margin: 20px; }
+        .controls, .results { width: 300px; }
+        .viewer-area { flex-grow: 1; }
+        #interactiveViewerContainer { width: 100%; height: 500px; border: 1px solid green; }
+        label, input, button { display: block; margin-bottom: 10px; }
+        input[type="text"] { width: calc(100% - 10px); }
+        #roiList li { margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+        #roiList button { margin-left: 10px; margin-bottom: 0; }
+        textarea { width: 100%; min-height: 80px; }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h2>Controls</h2>
+        <label for="urnInput">Image URN:</label>
+        <input type="text" id="urnInput" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
+        <button id="loadViewerBtn">Load/Reset Viewer</button>
+        
+        <p><strong>Instructions:</strong></p>
+        <ul>
+            <li><strong>Zoom:</strong> Mouse wheel</li>
+            <li><strong>Pan:</strong> Click & drag</li>
+            <li><strong>Select ROI:</strong> Option/Alt + Click & drag</li>
+            <li><strong>Query ROI:</strong> Shift + Click</li>
+        </ul>
+    </div>
+
+    <div class="viewer-area">
+        <h2>Viewer</h2>
+        <div id="interactiveViewerContainer"></div>
+    </div>
+
+    <div class="results">
+        <h2>Highlighted ROIs</h2>
+        <ul id="roiList"></ul>
+
+        <h2>Query Results (Shift+Click)</h2>
+        <textarea id="queryResults" readonly></textarea>
+        
+        <h2>All Selected ROIs (Newline Separated)</h2>
+        <textarea id="allSelectedRoisOutput" readonly></textarea>
+    </div>
+
+    <script>
+        let currentViewer = null;
+        const urnInput = document.getElementById('urnInput');
+        const loadViewerBtn = document.getElementById('loadViewerBtn');
+        const roiListElement = document.getElementById('roiList');
+        const queryResultsElement = document.getElementById('queryResults');
+        const allSelectedRoisOutput = document.getElementById('allSelectedRoisOutput');
+
+        function refreshRoiListDisplay() {
+            if (!currentViewer) {
+                roiListElement.innerHTML = '';
+                return;
+            }
+            const rois = currentViewer.getROIs();
+            roiListElement.innerHTML = ''; // Clear list
+
+            rois.forEach(urn => {
+                const item = document.createElement('li');
+                const urnText = document.createElement('span');
+                urnText.textContent = urn;
+                urnText.title = urn; // Show full URN on hover
+                urnText.style.whiteSpace = "nowrap";
+                urnText.style.overflow = "hidden";
+                urnText.style.textOverflow = "ellipsis";
+                urnText.style.maxWidth = "180px"; // Adjust as needed
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Remove';
+                deleteButton.onclick = () => {
+                    currentViewer.removeROI(urn);
+                    refreshRoiListDisplay(); // Update list after removal
+                    // Also update the allSelectedRoisOutput
+                    allSelectedRoisOutput.value = currentViewer.getROIs().join('\n');
+                };
+                item.appendChild(urnText);
+                item.appendChild(deleteButton);
+                roiListElement.appendChild(item);
+            });
+        }
+
+        function setupViewer() {
+            if (currentViewer) {
+                currentViewer.destroy();
+            }
+            const urn = urnInput.value.trim();
+            if (!urn) {
+                alert("Please enter a URN.");
+                return;
+            }
+
+            currentViewer = HMTIIIF.createViewer('interactiveViewerContainer', urn, {
+                onRectangleSelected: (allUrnsString) => {
+                    // allUrnsString is the newline-separated list of all current ROIs
+                    allSelectedRoisOutput.value = allUrnsString;
+                    refreshRoiListDisplay(); // The viewer has already updated its internal list
+                },
+                onQuery: (matchingUrns) => {
+                    queryResultsElement.value = matchingUrns.length > 0 ? 
+                        `Found ${matchingUrns.length} ROI(s):\n${matchingUrns.join('\n')}` : 
+                        'No matching ROIs at clicked point.';
+                }
+            });
+
+            // Initial population of lists if the URN had an ROI or if viewer loads default ROIs
+            if (currentViewer) {
+                // Small delay to ensure viewer might have fetched info and initial ROIs
+                setTimeout(() => {
+                     allSelectedRoisOutput.value = currentViewer.getROIs().join('\n');
+                     refreshRoiListDisplay();
+                }, 500);
+            } else {
+                 allSelectedRoisOutput.value = '';
+                 refreshRoiListDisplay();
+            }
+        }
+
+        loadViewerBtn.addEventListener('click', setupViewer);
+        
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            setupViewer(); // Load default URN on page load
+        });
+    </script>
+</body>
+</html>
+```
+
+**3. `test-getIIIFImageUrl.html`**
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMT IIIF Lib - getIIIFImageUrl Test</title>
+    <script src="hmt-iiif-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: inline-block; width: 100px; }
+        input[type="text"], input[type="number"] { width: 400px; margin-bottom: 5px; }
+        #generatedUrl { word-break: break-all; background: #f0f0f0; padding: 10px; margin-top: 10px; }
+        #imagePreview { margin-top: 20px; max-width: 100%; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>HMT IIIF Library - <code>getIIIFImageUrl</code> Test</h1>
+
+    <div class="form-group">
+        <label for="urn">URN:</label>
+        <input type="text" id="urn" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15">
+    </div>
+    <div class="form-group">
+        <label for="width">Width (opt):</label>
+        <input type="number" id="width" placeholder="e.g., 800">
+    </div>
+    <div class="form-group">
+        <label for="height">Height (opt):</label>
+        <input type="number" id="height" placeholder="e.g., 600">
+    </div>
+    <button id="generateUrlBtn">Generate IIIF URL & Display Image</button>
+
+    <h2>Generated URN Value:</h2>
+    <p id="urnDisplay"></p>
+
+    <h2>Generated IIIF URL:</h2>
+    <pre id="generatedUrl"></pre>
+
+    <h2>Image Preview:</h2>
+    <img id="imagePreview" src="#" alt="IIIF Image Preview">
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const urnInput = document.getElementById('urn');
+            const widthInput = document.getElementById('width');
+            const heightInput = document.getElementById('height');
+            const generateUrlBtn = document.getElementById('generateUrlBtn');
+            const urnDisplay = document.getElementById('urnDisplay');
+            const generatedUrlElement = document.getElementById('generatedUrl');
+            const imagePreview = document.getElementById('imagePreview');
+
+            function updateImage() {
+                const urn = urnInput.value;
+                const width = widthInput.value ? parseInt(widthInput.value) : undefined;
+                const height = heightInput.value ? parseInt(heightInput.value) : undefined;
+
+                urnDisplay.textContent = urn;
+
+                const options = {};
+                if (width) options.width = width;
+                if (height) options.height = height;
+
+                const imageUrl = HMTIIIF.getIIIFImageUrl(urn, options);
+
+                if (imageUrl) {
+                    generatedUrlElement.textContent = imageUrl;
+                    imagePreview.src = imageUrl;
+                    imagePreview.style.display = 'block';
+                } else {
+                    generatedUrlElement.textContent = 'Error generating URL. Check console.';
+                    imagePreview.src = '#';
+                    imagePreview.style.display = 'none';
+                }
+            }
+
+            generateUrlBtn.addEventListener('click', updateImage);
+            
+            // Initial call to display default
+            updateImage(); 
+        });
+    </script>
+</body>
+</html>
+
+```
+
+**To use this:**
+1.  Save the first code block as `hmt-iiif-lib.js`.
+2.  Save the subsequent HTML blocks as `test-viewer.html`, `test-interactive.html`, and `test-getIIIFImageUrl.html` in the same directory.
+3.  Open the HTML files in a browser.
+
+This library provides the core functionality requested. The viewer is built "from scratch" in the sense that it uses the IIIF image API directly for regions and scaling, and handles canvas drawing, zoom/pan logic, and interaction modes manually without relying on a comprehensive IIIF viewing library like OpenSeaDragon. The image loading is simplified (no complex tiling pyramids, but dynamic region fetching). Error handling is basic but present. The API for the viewer allows for adding/removing ROIs as per the test requirements. CORS is handled by setting `crossOrigin="Anonymous"` for images and using `mode: 'cors'` for fetch, assuming the HMT server permits it.
+
+### USER
+  
+Two details. 1) Please change the shape of the cursor for each of the 3 interaction modes. 2) `getIIIFImageUrl` works flawlessly, but `createViewer` is not preserving aspect ratio. Could you fix that?
+
+### ASSISTANT
+Okay, I've updated the `hmt-iiif-lib.js` to address the cursor changes and the aspect ratio preservation in `createViewer`.
+
+Here are the key changes:
+
+1.  **Aspect Ratio Preservation in `createViewer`**:
+    *   The IIIF image request already uses `!${canvas.width},${canvas.height}` for the `size` parameter, which asks the server to return an image that best fits within the canvas dimensions while preserving the aspect ratio of the requested *region*.
+    *   The `redraw` function now calculates how to draw this server-returned image onto the canvas. It determines the correct `drawWidth`, `drawHeight`, `offsetX`, and `offsetY` to center the image and maintain its aspect ratio, leading to letterboxing or pillarboxing if the image's aspect ratio doesn't match the canvas's. This calculated information is stored in `state.imgDrawDetails`.
+    *   New coordinate transformation helper functions `rawCanvasToOriginal` (maps a click on the raw canvas to original image coordinates) and `originalToFinalCanvas` (maps original image coordinates to where they appear on the letterboxed/pillarboxed canvas image) are implemented.
+    *   All interaction logic (panning, zooming, ROI selection, querying) now uses these helper functions to correctly map coordinates between the canvas, the drawn image area, and the original image space. This ensures interactions behave as expected even with letterboxing.
+    *   A `ResizeObserver` is used to monitor canvas size changes. When the canvas resizes, its internal width/height attributes are updated, and the image is re-requested and redrawn to fit the new dimensions. Zoom level and view center (in original image coordinates) try to be maintained across resizes, though the exact visual might shift slightly to re-center within the new aspect ratio.
+
+2.  **Cursor Changes for Interaction Modes**:
+    *   A new `updateCursor()` function sets `canvas.style.cursor` based on `state.altKeyDown`, `state.shiftKeyDown`, and `state.isPanning`.
+        *   Default (ready to pan): `grab`
+        *   Panning: `grabbing`
+        *   Rectangle Selection (Option/Alt key down): `crosshair`
+        *   Query Mode (Shift key down): `help`
+    *   Global `keydown` and `keyup` event listeners on `window` track the state of Alt/Option and Shift keys.
+    *   Canvas `mouseenter`, `mouseleave`, `mousedown`, `mouseup`, and `mousemove` events call `updateCursor()` to ensure the cursor reflects the current interaction mode and key states.
+    *   A `blur` event listener on `window` resets key states if the window loses focus, preventing "stuck" key effects.
+
+Here's the updated `hmt-iiif-lib.js`:
+
+```javascript
+// hmt-iiif-lib.js
+(function(window) {
+    'use strict';
+
+    const IIIF_SERVER_PROTOCOL = 'http';
+    const IIIF_SERVER_HOST = 'www.homermultitext.org';
+    const IIIF_SERVER_PATH = '/iipsrv?IIIF=';
+    const HMT_IIIF_PREFIX_BASE = '/project/homer/pyramidal/deepzoom';
+
+    // --- Helper: Parse URN ---
+    function parseURN(urnStr) {
+        if (typeof urnStr !== 'string') {
+            return { valid: false, error: "URN must be a string." };
+        }
+
+        const parts = urnStr.split('@');
+        const baseUrn = parts[0];
+        let roi = null;
+
+        if (parts.length > 2) {
+            return { valid: false, error: "Invalid URN format: multiple '@' symbols." };
+        }
+
+        if (parts.length === 2 && parts[1]) {
+            const roiParts = parts[1].split(',');
+            if (roiParts.length === 4) {
+                const [x, y, w, h] = roiParts.map(parseFloat);
+                if ([x, y, w, h].every(val => !isNaN(val) && val >= 0 && val <= 1)) {
+                    roi = { x, y, w, h };
+                } else {
+                    return { valid: false, error: "Invalid ROI format: values must be numbers between 0 and 1." };
+                }
+            } else {
+                return { valid: false, error: "Invalid ROI format: must be x,y,w,h." };
+            }
+        }
+
+        const citeParts = baseUrn.split(':');
+        if (citeParts.length !== 5 || citeParts[0] !== 'urn' || citeParts[1] !== 'cite2') {
+            return { valid: false, error: "Invalid CITE2 URN structure." };
+        }
+
+        const namespace = citeParts[2];
+        const collectionComponent = citeParts[3];
+        const objectId = citeParts[4];
+
+        const collectionParts = collectionComponent.split('.');
+        if (collectionParts.length !== 2) {
+            return { valid: false, error: "Invalid URN collection component format." };
+        }
+
+        return {
+            valid: true,
+            baseUrn: baseUrn,
+            fullUrn: urnStr,
+            namespace: namespace,
+            collectionParts: collectionParts,
+            objectId: objectId,
+            roi: roi,
+            error: null
+        };
+    }
+
+    // --- Helper: Random Color ---
+    function getRandomColor() {
+        const r = Math.floor(Math.random() * 200); // Keep it a bit dark for visibility
+        const g = Math.floor(Math.random() * 200);
+        const b = Math.floor(Math.random() * 200);
+        return `rgba(${r},${g},${b},0.5)`; // Semi-transparent
+    }
+
+    // --- Helper: Debounce ---
+    function debounce(func, delay) {
+        let timeout;
+        return function(...args) {
+            const context = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), delay);
+        };
+    }
+
+    // --- getIIIFImageUrl Function ---
+    function getIIIFImageUrl(urnStr, options = {}) {
+        const parsed = parseURN(urnStr);
+        if (!parsed.valid) {
+            console.error("getIIIFImageUrl Error:", parsed.error);
+            return null;
+        }
+
+        const iiifPrefix = `${HMT_IIIF_PREFIX_BASE}/${parsed.namespace}/${parsed.collectionParts[0]}/${parsed.collectionParts[1]}`;
+        const imageIdentifier = `${parsed.objectId}.tif`;
+
+        const baseUrl = `${IIIF_SERVER_PROTOCOL}://${IIIF_SERVER_HOST}${IIIF_SERVER_PATH}${iiifPrefix}/${imageIdentifier}`;
+
+        let region = 'full';
+        if (parsed.roi) {
+            region = `pct:${parsed.roi.x * 100},${parsed.roi.y * 100},${parsed.roi.w * 100},${parsed.roi.h * 100}`;
+        }
+
+        let size = 'full';
+        if (options.width && options.height) {
+            size = `!${options.width},${options.height}`;
+        } else if (options.width) {
+            size = `${options.width},`;
+        } else if (options.height) {
+            size = `,${options.height}`;
+        }
+
+        const rotation = '0';
+        const quality = 'default';
+        const format = 'jpg';
+
+        return `${baseUrl}/${region}/${size}/${rotation}/${quality}.${format}`;
+    }
+
+    // --- createViewer Function ---
+    function createViewer(containerIdOrElement, urnOrUrns, viewerOptions = {}) {
+        const container = typeof containerIdOrElement === 'string' ? document.getElementById(containerIdOrElement) : containerIdOrElement;
+        if (!container) {
+            console.error("Viewer container not found.");
+            return null;
+        }
+        container.innerHTML = ''; // Clear previous content
+
+        const canvas = document.createElement('canvas');
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        // canvas.style.border = "1px solid #ccc"; // Style from test HTML, not library
+        container.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+
+        let state = {
+            baseParsedURN: null,
+            originalWidth: 0,
+            originalHeight: 0,
+            currentZoom: 1.0, // Defines how many original image pixels are covered by one "logical" canvas pixel (before aspect ratio correction)
+            viewCenterX_orig: 0, // Center of the viewport in original image coordinates
+            viewCenterY_orig: 0,
+
+            // Details of how the image is currently drawn on canvas (after aspect ratio correction)
+            imgDrawDetails: { x: 0, y: 0, width: 0, height: 0 },
+
+            loadedIIIFImage: null, // Will store { image: Image, requestedRegion: {x,y,w,h in orig coords} }
+            highlightedROIs: [], // { urn, roi: {x,y,w,h in percentages}, color }
+            isPanning: false,
+            panStart_orig: { x: 0, y: 0 }, // Pan start in original image coordinates
+            panStartViewCenter: { x: 0, y: 0 }, // viewCenterX_orig at pan start
+            isSelecting: false,
+            selectionStartCanvas: { x: 0, y: 0 }, // Mouse click in raw canvas coords
+            currentSelectionRectCanvas: null, // {x,y,w,h} in raw canvas coords
+            imageLoadError: null,
+            isLoadingImage: false,
+            options: {
+                onRectangleSelected: viewerOptions.onRectangleSelected || function() {},
+                onQuery: viewerOptions.onQuery || function() {},
+                minZoomFactor: 0.01, // Factor relative to full image view, e.g. 0.1 means zoom out 10x
+                maxZoomFactor: 20,  // Factor relative to 1:1 pixel mapping, e.g., 10 means 1 orig pixel = 10 canvas pixels
+            },
+            mouseOverCanvas: false,
+            altKeyDown: false,
+            shiftKeyDown: false,
+        };
+
+        const debouncedRequestImageAndRedraw = debounce(requestImageAndRedraw, 150);
+
+        const observer = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (canvas.width !== width || canvas.height !== height) {
+                    canvas.width = width;
+                    canvas.height = height;
+                    if (state.originalWidth > 0) { // If image info is loaded
+                        // Re-calculate initial zoom settings if it's the first time after getting originalW/H
+                        // Or simply redraw with current view parameters
+                        debouncedRequestImageAndRedraw();
+                    }
+                }
+            }
+        });
+        observer.observe(canvas);
+        
+        // Set initial canvas resolution after it's in the DOM and sized by CSS
+        // ResizeObserver should handle this, but as a fallback:
+        requestAnimationFrame(() => {
+            const rect = canvas.getBoundingClientRect();
+            if (canvas.width !== rect.width || canvas.height !== rect.height) {
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            }
+            // If URN was parsed but info not fetched (e.g., canvas was 0x0 initially)
+            if (state.baseParsedURN && !state.originalWidth && canvas.width > 0 && canvas.height > 0) {
+                fetchImageInfo();
+            } else if (state.originalWidth) { // If info already available and canvas is sized
+                debouncedRequestImageAndRedraw();
+            }
+        });
+
+        function parseInitialUrns(inputUrns) {
+            const initialRois = [];
+            let baseUrnToUse = null;
+            const urnArray = Array.isArray(inputUrns) ? inputUrns : [inputUrns];
+
+            for (let i = 0; i < urnArray.length; i++) {
+                const parsed = parseURN(urnArray[i]);
+                if (!parsed.valid) {
+                    console.error("Invalid URN provided for viewer:", parsed.error, urnArray[i]);
+                    if (i === 0) {
+                        state.imageLoadError = `Invalid base URN: ${parsed.error}`;
+                        return false;
+                    }
+                    continue;
+                }
+                if (i === 0) {
+                    state.baseParsedURN = parsed;
+                    baseUrnToUse = parsed.baseUrn;
+                } else if (parsed.baseUrn !== baseUrnToUse) {
+                    console.warn("All URNs in array must share the same base image. Skipping:", urnArray[i]);
+                    continue;
+                }
+                if (parsed.roi) {
+                    if (!initialRois.some(r => r.urn === parsed.fullUrn)) {
+                         initialRois.push({
+                            urn: parsed.fullUrn,
+                            roi: parsed.roi,
+                            color: getRandomColor()
+                        });
+                    }
+                }
+            }
+            state.highlightedROIs = initialRois;
+            return state.baseParsedURN != null;
+        }
+
+        function fetchImageInfo() {
+            if (!state.baseParsedURN) {
+                state.imageLoadError = "Base URN not properly parsed.";
+                redraw(); return;
+            }
+            if (canvas.width === 0 || canvas.height === 0) { // Defer if canvas not sized
+                requestAnimationFrame(fetchImageInfo); return;
+            }
+            const infoUrl = `${IIIF_SERVER_PROTOCOL}://${IIIF_SERVER_HOST}${IIIF_SERVER_PATH}${HMT_IIIF_PREFIX_BASE}/${state.baseParsedURN.namespace}/${state.baseParsedURN.collectionParts[0]}/${state.baseParsedURN.collectionParts[1]}/${state.baseParsedURN.objectId}.tif/info.json`;
+
+            fetch(infoUrl, { mode: 'cors' })
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response.json();
+                })
+                .then(info => {
+                    state.originalWidth = info.width;
+                    state.originalHeight = info.height;
+                    state.viewCenterX_orig = state.originalWidth / 2;
+                    state.viewCenterY_orig = state.originalHeight / 2;
+
+                    const scaleX = canvas.width / state.originalWidth;
+                    const scaleY = canvas.height / state.originalHeight;
+                    state.currentZoom = Math.min(scaleX, scaleY); // Initial zoom to fit whole image
+
+                    // Adjust min/max zoom factors based on this initial fit and a nominal 1:1 pixel mapping
+                    // minZoom allows zooming out further from this "fit" view.
+                    state.options.minZoomFactor = state.currentZoom * 0.1;
+                    // maxZoomFactor is relative to currentZoom where 1.0 = 1 canvas pixel shows 1 image pixel.
+                    // If currentZoom is 0.5 (image twice as large as canvas), maxZoom of 10 means 20x currentZoom.
+                    // This needs to be set relative to `state.currentZoom = 1` meaning 1:1.
+                    // Let's define maxZoom as an absolute factor. E.g., 1 image pixel = N canvas pixels.
+                    // MaxZoom = 10 means 1 original pixel can be magnified to 10 canvas pixels.
+                    // state.currentZoom = canvas_pixels / original_pixels.
+                    // So state.options.maxZoomFactor = 10 is fine as an upper limit for state.currentZoom.
+
+                    requestImageAndRedraw();
+                })
+                .catch(error => {
+                    console.error("Error fetching IIIF info.json:", error);
+                    state.imageLoadError = `Failed to load image info: ${error.message}.`;
+                    redraw();
+                });
+        }
+
+        function requestImageAndRedraw() {
+            if (!state.originalWidth || !state.originalHeight || state.isLoadingImage || canvas.width === 0 || canvas.height === 0) {
+                if((canvas.width === 0 || canvas.height === 0) && state.originalWidth > 0 && !state.isLoadingImage) {
+                    // Canvas not sized yet but image info is available, try again
+                    state.isLoadingImage = true; // Prevent re-entrancy
+                    requestAnimationFrame(() => {
+                        state.isLoadingImage = false; // Reset flag
+                        requestImageAndRedraw();
+                    });
+                }
+                return;
+            }
+            state.isLoadingImage = true;
+            state.imageLoadError = null;
+
+            // Viewport dimensions in original image coordinates, based on canvas size and current zoom
+            const viewPortWidth_orig = canvas.width / state.currentZoom;
+            const viewPortHeight_orig = canvas.height / state.currentZoom;
+
+            // Top-left of this ideal viewport
+            let topLeftX_orig = state.viewCenterX_orig - viewPortWidth_orig / 2;
+            let topLeftY_orig = state.viewCenterY_orig - viewPortHeight_orig / 2;
+
+            // Clamp this viewport to the actual image boundaries to get the IIIF region
+            const regionX = Math.max(0, Math.min(topLeftX_orig, state.originalWidth -1)); // ensure regionX is within image
+            const regionY = Math.max(0, Math.min(topLeftY_orig, state.originalHeight -1));
+
+            const regionEndX = Math.max(regionX + 1, Math.min(topLeftX_orig + viewPortWidth_orig, state.originalWidth));
+            const regionEndY = Math.max(regionY + 1, Math.min(topLeftY_orig + viewPortHeight_orig, state.originalHeight));
+            
+            const regionW = Math.max(1, regionEndX - regionX);
+            const regionH = Math.max(1, regionEndY - regionY);
+
+            const iiifRegion = `${Math.round(regionX)},${Math.round(regionY)},${Math.round(regionW)},${Math.round(regionH)}`;
+            const iiifSizeParam = `!${canvas.width},${canvas.height}`; // Best fit, preserves aspect ratio of the REGION
+
+            const imageUrl = `${IIIF_SERVER_PROTOCOL}://${IIIF_SERVER_HOST}${IIIF_SERVER_PATH}` +
+                             `${HMT_IIIF_PREFIX_BASE}/${state.baseParsedURN.namespace}/${state.baseParsedURN.collectionParts[0]}/${state.baseParsedURN.collectionParts[1]}/${state.baseParsedURN.objectId}.tif` +
+                             `/${iiifRegion}/${iiifSizeParam}/0/default.jpg`;
+
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.onload = () => {
+                // Store the image and the details of the original image region it represents
+                state.loadedIIIFImage = {
+                    image: img,
+                    requestedRegion: { x: regionX, y: regionY, w: regionW, h: regionH }
+                };
+                state.isLoadingImage = false;
+                redraw();
+            };
+            img.onerror = (e) => {
+                console.error("Error loading IIIF image tile:", imageUrl, e);
+                state.imageLoadError = "Error loading image tile. See console.";
+                state.isLoadingImage = false;
+                state.loadedIIIFImage = null;
+                redraw();
+            };
+            img.src = imageUrl;
+            if (!state.loadedIIIFImage) redraw(); // Show loading message if no image currently displayed
+        }
+
+        // --- Coordinate Transformation Helpers ---
+        function rawCanvasToOriginal(canvasX, canvasY) {
+            if (!state.loadedIIIFImage || !state.loadedIIIFImage.requestedRegion || state.imgDrawDetails.width === 0) return null;
+
+            const d = state.imgDrawDetails; // {x, y, width, height} of drawn image on canvas
+            const r = state.loadedIIIFImage.requestedRegion; // {x, y, w, h} of region in original image
+
+            const x_in_drawn_img = canvasX - d.x;
+            const y_in_drawn_img = canvasY - d.y;
+
+            if (x_in_drawn_img < 0 || x_in_drawn_img >= d.width || y_in_drawn_img < 0 || y_in_drawn_img >= d.height) {
+                return null; // Clicked outside drawn image
+            }
+            const propX = x_in_drawn_img / d.width;
+            const propY = y_in_drawn_img / d.height;
+
+            return { x: r.x + propX * r.w, y: r.y + propY * r.h };
+        }
+
+        function originalToFinalCanvas(origX, origY) {
+            if (!state.loadedIIIFImage || !state.loadedIIIFImage.requestedRegion || state.imgDrawDetails.width === 0) {
+                 return {x: 0, y:0}; // Should ideally not be called if image not ready
+            }
+            const d = state.imgDrawDetails;
+            const r = state.loadedIIIFImage.requestedRegion;
+
+            const x_in_region = origX - r.x;
+            const y_in_region = origY - r.y;
+            // Ensure no division by zero if region width/height is somehow zero
+            const propX = r.w > 0 ? x_in_region / r.w : 0;
+            const propY = r.h > 0 ? y_in_region / r.h : 0;
+            
+            return { x: d.x + propX * d.width, y: d.y + propY * d.height };
+        }
+
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (state.imageLoadError) {
+                ctx.fillStyle = 'red'; ctx.font = '16px Arial'; ctx.textAlign = 'center';
+                ctx.fillText(state.imageLoadError, canvas.width / 2, canvas.height / 2);
+                if (state.isLoadingImage) ctx.fillText("Loading...", canvas.width / 2, canvas.height / 2 + 20);
+                return;
+            }
+            
+            if (state.isLoadingImage && !state.loadedIIIFImage) {
+                ctx.fillStyle = 'gray'; ctx.font = '16px Arial'; ctx.textAlign = 'center';
+                ctx.fillText("Loading image...", canvas.width / 2, canvas.height / 2);
+            }
+
+            if (state.loadedIIIFImage && state.loadedIIIFImage.image.naturalWidth > 0) {
+                const imgObj = state.loadedIIIFImage.image;
+                const imgAspectRatio = imgObj.naturalWidth / imgObj.naturalHeight;
+                const canvasAspectRatio = canvas.width / canvas.height;
+                let drawWidth, drawHeight, offsetX, offsetY;
+
+                if (imgAspectRatio > canvasAspectRatio) {
+                    drawWidth = canvas.width;
+                    drawHeight = canvas.width / imgAspectRatio;
+                    offsetX = 0;
+                    offsetY = (canvas.height - drawHeight) / 2;
+                } else {
+                    drawHeight = canvas.height;
+                    drawWidth = canvas.height * imgAspectRatio;
+                    offsetY = 0;
+                    offsetX = (canvas.width - drawWidth) / 2;
+                }
+                state.imgDrawDetails = { x: offsetX, y: offsetY, width: drawWidth, height: drawHeight };
+                ctx.drawImage(imgObj, offsetX, offsetY, drawWidth, drawHeight);
+
+                state.highlightedROIs.forEach(item => {
+                    const roi = item.roi;
+                    const roi_x1_orig = roi.x * state.originalWidth;
+                    const roi_y1_orig = roi.y * state.originalHeight;
+                    const roi_x2_orig = (roi.x + roi.w) * state.originalWidth;
+                    const roi_y2_orig = (roi.y + roi.h) * state.originalHeight;
+
+                    const topLeftCanvas = originalToFinalCanvas(roi_x1_orig, roi_y1_orig);
+                    const bottomRightCanvas = originalToFinalCanvas(roi_x2_orig, roi_y2_orig);
+                    
+                    ctx.fillStyle = item.color;
+                    ctx.fillRect(topLeftCanvas.x, topLeftCanvas.y, 
+                                 bottomRightCanvas.x - topLeftCanvas.x, 
+                                 bottomRightCanvas.y - topLeftCanvas.y);
+                });
+
+            } else if (!state.isLoadingImage && !state.imageLoadError && (!state.baseParsedURN || !state.originalWidth)) {
+                ctx.fillStyle = 'gray'; ctx.font = '16px Arial'; ctx.textAlign = 'center';
+                const message = !state.baseParsedURN ? "Initializing..." : "Loading info...";
+                ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            if (state.isSelecting && state.currentSelectionRectCanvas) {
+                ctx.fillStyle = "rgba(0, 100, 255, 0.3)";
+                ctx.strokeStyle = "rgba(0, 100, 255, 0.8)";
+                ctx.lineWidth = 1;
+                const r = state.currentSelectionRectCanvas;
+                ctx.fillRect(r.x, r.y, r.w, r.h);
+                ctx.strokeRect(r.x, r.y, r.w, r.h);
+            }
+        }
+
+        // --- Cursor Update Logic ---
+        function updateCursor() {
+            if (!state.mouseOverCanvas) {
+                canvas.style.cursor = 'default';
+                return;
+            }
+            // Check for Alt/Option key (e.altKey for most, e.metaKey for Option on Mac in some browsers/setups)
+            const isOptionKeyDown = state.altKeyDown || (event && event.metaKey && navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+
+            if (isOptionKeyDown) {
+                canvas.style.cursor = 'crosshair';
+            } else if (state.shiftKeyDown) {
+                canvas.style.cursor = 'help';
+            } else if (state.isPanning) {
+                canvas.style.cursor = 'grabbing';
+            } else {
+                canvas.style.cursor = 'grab';
+            }
+        }
+        
+        // --- Event Handlers ---
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            if (!state.loadedIIIFImage || state.imgDrawDetails.width === 0) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const mouseX_canvas = e.clientX - rect.left;
+            const mouseY_canvas = e.clientY - rect.top;
+
+            const mousePointOrig = rawCanvasToOriginal(mouseX_canvas, mouseY_canvas);
+            if (!mousePointOrig) return; 
+
+            const zoomFactorOnWheel = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+            const oldZoom = state.currentZoom;
+            let newZoom = oldZoom * zoomFactorOnWheel;
+            newZoom = Math.max(state.options.minZoomFactor, Math.min(newZoom, state.options.maxZoomFactor));
+            if (newZoom === oldZoom) return; // No change in zoom
+            state.currentZoom = newZoom;
+            
+            const relMouseX_in_drawn = (mouseX_canvas - state.imgDrawDetails.x) / state.imgDrawDetails.width;
+            const relMouseY_in_drawn = (mouseY_canvas - state.imgDrawDetails.y) / state.imgDrawDetails.height;
+
+            const newViewW_orig = canvas.width / state.currentZoom;
+            const newViewH_orig = canvas.height / state.currentZoom;
+
+            state.viewCenterX_orig = mousePointOrig.x - (relMouseX_in_drawn - 0.5) * newViewW_orig;
+            state.viewCenterY_orig = mousePointOrig.y - (relMouseY_in_drawn - 0.5) * newViewH_orig;
+            
+            debouncedRequestImageAndRedraw();
+        });
+
+        canvas.addEventListener('mousedown', e => {
+            if (!state.loadedIIIFImage) return;
+            updateCursor(); // Ensure cursor reflects current key state on mousedown
+
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            const clickOrig = rawCanvasToOriginal(currentX, currentY);
+
+            const isOptionKeyDown = e.altKey || (e.metaKey && navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+
+            if (isOptionKeyDown) { 
+                if (clickOrig) { 
+                    state.isSelecting = true;
+                    state.isPanning = false; 
+                    state.selectionStartCanvas = { x: currentX, y: currentY };
+                    state.currentSelectionRectCanvas = { x: currentX, y: currentY, w: 0, h: 0 };
+                }
+            } else if (!e.shiftKey) { 
+                if (clickOrig) {
+                    state.isPanning = true;
+                    state.isSelecting = false;
+                    state.panStart_orig = clickOrig;
+                    state.panStartViewCenter = { x: state.viewCenterX_orig, y: state.viewCenterY_orig };
+                    updateCursor(); // Set to 'grabbing'
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            if (!state.mouseOverCanvas) updateCursor(); // If keys changed while mouse was outside
+            if (!state.loadedIIIFImage) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            
+            if (state.isPanning) {
+                const currentPointOrig = rawCanvasToOriginal(currentX, currentY);
+                if (currentPointOrig && state.panStart_orig) {
+                    const dx_orig = currentPointOrig.x - state.panStart_orig.x;
+                    const dy_orig = currentPointOrig.y - state.panStart_orig.y;
+                    state.viewCenterX_orig = state.panStartViewCenter.x - dx_orig;
+                    state.viewCenterY_orig = state.panStartViewCenter.y - dy_orig;
+                    debouncedRequestImageAndRedraw();
+                }
+            } else if (state.isSelecting) {
+                const x = Math.min(state.selectionStartCanvas.x, currentX);
+                const y = Math.min(state.selectionStartCanvas.y, currentY);
+                const w = Math.abs(state.selectionStartCanvas.x - currentX);
+                const h = Math.abs(state.selectionStartCanvas.y - currentY);
+                state.currentSelectionRectCanvas = { x, y, w, h };
+                redraw(); 
+            }
+        });
+
+        canvas.addEventListener('mouseup', e => {
+            if (!state.loadedIIIFImage) return;
+            
+            if (state.isPanning) {
+                state.isPanning = false;
+            } else if (state.isSelecting) {
+                state.isSelecting = false;
+                const selRectCanvas = state.currentSelectionRectCanvas;
+                state.currentSelectionRectCanvas = null; 
+
+                if (selRectCanvas && selRectCanvas.w > 5 && selRectCanvas.h > 5) {
+                    const tl_orig = rawCanvasToOriginal(selRectCanvas.x, selRectCanvas.y);
+                    const br_orig = rawCanvasToOriginal(selRectCanvas.x + selRectCanvas.w, selRectCanvas.y + selRectCanvas.h);
+
+                    if (tl_orig && br_orig) {
+                        const roi_x1_orig = Math.min(tl_orig.x, br_orig.x); // Handle drag direction
+                        const roi_y1_orig = Math.min(tl_orig.y, br_orig.y);
+                        const roi_x2_orig = Math.max(tl_orig.x, br_orig.x);
+                        const roi_y2_orig = Math.max(tl_orig.y, br_orig.y);
+
+                        const roi_x_pct = Math.max(0, Math.min(1, roi_x1_orig / state.originalWidth));
+                        const roi_y_pct = Math.max(0, Math.min(1, roi_y1_orig / state.originalHeight));
+                        const roi_w_pct = Math.max(0, Math.min(1 - roi_x_pct, (roi_x2_orig - roi_x1_orig) / state.originalWidth));
+                        const roi_h_pct = Math.max(0, Math.min(1 - roi_y_pct, (roi_y2_orig - roi_y1_orig) / state.originalHeight));
+
+                        if (roi_w_pct > 0.001 && roi_h_pct > 0.001) {
+                            const newRoiUrn = `${state.baseParsedURN.baseUrn}@${roi_x_pct.toFixed(4)},${roi_y_pct.toFixed(4)},${roi_w_pct.toFixed(4)},${roi_h_pct.toFixed(4)}`;
+                            if (!state.highlightedROIs.some(r => r.urn === newRoiUrn)) {
+                               state.highlightedROIs.push({
+                                    urn: newRoiUrn,
+                                    roi: { x: roi_x_pct, y: roi_y_pct, w: roi_w_pct, h: roi_h_pct },
+                                    color: getRandomColor()
+                                });
+                            }
+                            state.options.onRectangleSelected(state.highlightedROIs.map(r => r.urn).join('\n'));
+                        }
+                    }
+                }
+                redraw(); 
+            }
+            updateCursor(); // Reset cursor from 'grabbing' or if keys changed
+        });
+        
+        canvas.addEventListener('mouseenter', () => {
+            state.mouseOverCanvas = true;
+            updateCursor();
+        });
+        canvas.addEventListener('mouseleave', (e) => {
+            state.mouseOverCanvas = false;
+            // Only reset cursor if not actively panning/selecting and mouse button is up
+            if (!e.buttons) { // e.buttons is a bitmask of pressed buttons
+                if (state.isPanning) state.isPanning = false;
+                if (state.isSelecting) {
+                    state.isSelecting = false;
+                    state.currentSelectionRectCanvas = null;
+                    redraw();
+                }
+                updateCursor(); // this will set to default if no keys pressed
+            } else if (state.isPanning || state.isSelecting) {
+                // If button is still down, keep current interaction cursor (grabbing/crosshair)
+                // The 'mouseup' on window will handle stopping interaction if mouse released outside canvas
+            } else {
+                 updateCursor(); // Should go to default
+            }
+        });
+
+        canvas.addEventListener('click', e => {
+            if (!state.loadedIIIFImage || !e.shiftKey) return; 
+            e.preventDefault(); 
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX_canvas = e.clientX - rect.left;
+            const clickY_canvas = e.clientY - rect.top;
+
+            const clickPointOrig = rawCanvasToOriginal(clickX_canvas, clickY_canvas);
+            if (!clickPointOrig) {
+                state.options.onQuery([]);
+                return;
+            }
+            const clickX_pct = clickPointOrig.x / state.originalWidth;
+            const clickY_pct = clickPointOrig.y / state.originalHeight;
+
+            const matchingUrns = state.highlightedROIs
+                .filter(item => {
+                    const r = item.roi;
+                    return clickX_pct >= r.x && clickX_pct <= r.x + r.w &&
+                           clickY_pct >= r.y && clickY_pct <= r.y + r.h;
+                })
+                .map(item => item.urn);
+            state.options.onQuery(matchingUrns);
+        });
+
+        const keydownListener = (e) => {
+            let changed = false;
+            if (e.key === 'Alt' || e.key === 'Meta') { if(!state.altKeyDown) {state.altKeyDown = true; changed=true;} }
+            else if (e.key === 'Shift') { if(!state.shiftKeyDown) {state.shiftKeyDown = true; changed=true;} }
+            if(changed && state.mouseOverCanvas) updateCursor();
+        };
+        const keyupListener = (e) => {
+            let changed = false;
+            if (e.key === 'Alt' || e.key === 'Meta') { if(state.altKeyDown) {state.altKeyDown = false; changed=true;} }
+            else if (e.key === 'Shift') { if(state.shiftKeyDown) {state.shiftKeyDown = false; changed=true;} }
+            
+            // If a key is released that was part of an active operation (e.g. Alt during selection)
+            // and mouse button is still down, we might need to cancel the operation or change mode.
+            // For simplicity, just update cursor. If mouseup happens, it will finalize based on current state.
+            if (changed && state.mouseOverCanvas) updateCursor();
+            
+            // If mouse button is up and option key released during selection, cancel selection
+            if (!e.buttons && state.isSelecting && (e.key === 'Alt' || e.key === 'Meta')) {
+                state.isSelecting = false;
+                state.currentSelectionRectCanvas = null;
+                redraw();
+                updateCursor();
+            }
+        };
+        window.addEventListener('keydown', keydownListener);
+        window.addEventListener('keyup', keyupListener);
+        
+        // Handle mouseup outside canvas to stop panning/selection
+        const windowMouseUpListener = (e) => {
+            if (state.isPanning) {
+                state.isPanning = false;
+                if (state.mouseOverCanvas) updateCursor(); else canvas.style.cursor = 'default';
+            }
+            if (state.isSelecting) { // Finalize or cancel selection
+                canvas.dispatchEvent(new MouseEvent('mouseup', e)); // Simulate mouseup on canvas
+            }
+        };
+        window.addEventListener('mouseup', windowMouseUpListener);
+
+        const blurListener = () => { // Reset keys if window loses focus
+            if (state.altKeyDown || state.shiftKeyDown) {
+                state.altKeyDown = false;
+                state.shiftKeyDown = false;
+                if (state.mouseOverCanvas) updateCursor();
+            }
+        };
+        window.addEventListener('blur', blurListener);
+
+        // --- Initialize ---
+        if (!parseInitialUrns(urnOrUrns)) {
+            redraw(); 
+        } else {
+            if (canvas.width > 0 && canvas.height > 0) {
+                fetchImageInfo();
+            }
+            // else, ResizeObserver/requestAnimationFrame will handle initial fetchImageInfo
+        }
+
+        // --- Viewer API ---
+        return {
+            destroy: () => {
+                observer.disconnect();
+                window.removeEventListener('keydown', keydownListener);
+                window.removeEventListener('keyup', keyupListener);
+                window.removeEventListener('blur', blurListener);
+                window.removeEventListener('mouseup', windowMouseUpListener);
+                container.innerHTML = '';
+            },
+            addROI: (urnWithROI) => {
+                const parsed = parseURN(urnWithROI);
+                if (parsed.valid && parsed.roi && state.baseParsedURN && parsed.baseUrn === state.baseParsedURN.baseUrn) {
+                    if (!state.highlightedROIs.some(r => r.urn === parsed.fullUrn)) {
+                        state.highlightedROIs.push({
+                            urn: parsed.fullUrn,
+                            roi: parsed.roi,
+                            color: getRandomColor()
+                        });
+                        redraw();
+                        return true;
+                    }
+                }
+                return false;
+            },
+            removeROI: (urnWithROI) => {
+                const initialLength = state.highlightedROIs.length;
+                state.highlightedROIs = state.highlightedROIs.filter(r => r.urn !== urnWithROI);
+                if (state.highlightedROIs.length < initialLength) {
+                    redraw();
+                    return true;
+                }
+                return false;
+            },
+            getROIs: () => state.highlightedROIs.map(r => r.urn),
+            _getState: () => state // For debugging
+        };
+    }
+
+    window.HMTIIIF = {
+        createViewer: createViewer,
+        getIIIFImageUrl: getIIIFImageUrl,
+    };
+
+})(window);
+```
+You can use the same HTML test files as before. The viewer should now maintain aspect ratio correctly, and the cursor should change based on the interaction mode. The "Option" key for selection should work more reliably now across platforms by checking for `e.altKey` (standard) and also `e.metaKey` when on a Mac (as some Mac setups map Option to Meta).
+
+### USER
+Flawless! Could you write a test page that first checks for any URL parameters named `urn`, and if found, uses them to create an image viewer. If there are no URL parameters, it should use `urn:cite2:hmt:vaimg.2017a:VA012RN_0013` as a default image value. It should display the current list of any highlighted rectangles, and then allow users to remove a rectangle from the current list. Removing a rectangle from the list should update the display of the image, and the displayed list of highlighted rectangles.
+
+### ASSISTANT
+Okay, here's an HTML test page, `test-url-params.html`, that implements the requested functionality.
+
+This page will:
+1.  Check for URL parameters named `urn`. It can handle one or more `urn` parameters (e.g., `?urn=BASE_URN&urn=BASE_URN@ROI1&urn=BASE_URN@ROI2`).
+2.  If `urn` parameters are found, they will be used to initialize the viewer. The first `urn` will be considered the base image, and any subsequent `urn`s with the same base and an ROI extension will be added as initial highlighted rectangles.
+3.  If no `urn` parameters are found, it defaults to `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`.
+4.  Display the viewer.
+5.  Below the viewer, display a list of currently highlighted rectangles (as URNs with ROI extensions).
+6.  Allow users to remove a rectangle from this list by clicking a "Remove" button next to each URN.
+7.  Removing a rectangle updates both the image display (removing the highlight) and the displayed list.
+8.  If the user draws a new rectangle in the viewer (using Option/Alt-click-drag), the displayed list of highlighted rectangles will also be updated.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HMT IIIF Lib - URL Params & ROI Management</title>
+    <script src="hmt-iiif-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; display: flex; flex-direction: column; align-items: center; }
+        .viewer-container { 
+            width: 80vw; 
+            max-width: 900px; 
+            height: 60vh; 
+            min-height: 400px;
+            border: 1px solid #333; 
+            margin-bottom: 20px; 
+        }
+        .roi-management { 
+            width: 80vw; 
+            max-width: 900px;
+        }
+        h1, h2 { text-align: center; }
+        #roiList { list-style: none; padding: 0; }
+        #roiList li { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 8px; 
+            border-bottom: 1px solid #eee; 
+        }
+        #roiList li:last-child { border-bottom: none; }
+        #roiList .urn-text { 
+            flex-grow: 1; 
+            margin-right: 10px; 
+            word-break: break-all;
+        }
+        #roiList button { 
+            padding: 5px 10px; 
+            background-color: #f44336; 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            border-radius: 3px;
+        }
+        #roiList button:hover { background-color: #d32f2f; }
+        .instructions {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .instructions ul {padding-left: 20px;}
+    </style>
+</head>
+<body>
+    <h1>IIIF Viewer with URL Parameter Support</h1>
+
+    <div class="instructions">
+        <p><strong>Viewer Instructions:</strong></p>
+        <ul>
+            <li><strong>Zoom:</strong> Mouse wheel</li>
+            <li><strong>Pan:</strong> Click & drag</li>
+            <li><strong>Select ROI:</strong> Option/Alt + Click & drag</li>
+            <li><strong>Query ROI:</strong> Shift + Click (results in console or dedicated area if configured)</li>
+        </ul>
+        <p>You can specify the image and initial ROIs via URL parameters. <br>
+           Example: <code>?urn=urn:cite2:hmt:vaimg.2017a:VA012RN_0013&urn=urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.2,0.2</code>
+        </p>
+    </div>
+
+    <div id="viewerHost" class="viewer-container"></div>
+
+    <div class="roi-management">
+        <h2>Highlighted Rectangles (ROIs)</h2>
+        <ul id="roiList">
+            <!-- ROIs will be populated here by JavaScript -->
+        </ul>
+        <p id="noRoisMessage" style="display: none; text-align: center; color: #777;">No ROIs highlighted yet. Use Option/Alt + drag on the image to select one.</p>
+    </div>
+
+    <script>
+        let currentViewer = null;
+        const viewerHostElement = document.getElementById('viewerHost');
+        const roiListElement = document.getElementById('roiList');
+        const noRoisMessageElement = document.getElementById('noRoisMessage');
+
+        function getUrnsFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urns = urlParams.getAll('urn');
+            if (urns.length > 0) {
+                return urns;
+            }
+            return ['urn:cite2:hmt:vaimg.2017a:VA012RN_0013']; // Default URN
+        }
+
+        function refreshRoiListDisplay() {
+            if (!currentViewer) {
+                roiListElement.innerHTML = '';
+                noRoisMessageElement.style.display = 'block';
+                return;
+            }
+
+            const rois = currentViewer.getROIs(); // Expects an array of URN strings
+            roiListElement.innerHTML = ''; // Clear current list
+
+            if (rois.length === 0) {
+                noRoisMessageElement.style.display = 'block';
+            } else {
+                noRoisMessageElement.style.display = 'none';
+                rois.forEach(urn => {
+                    const listItem = document.createElement('li');
+                    
+                    const urnSpan = document.createElement('span');
+                    urnSpan.className = 'urn-text';
+                    urnSpan.textContent = urn;
+                    urnSpan.title = urn; // Show full URN on hover
+
+                    const removeButton = document.createElement('button');
+                    removeButton.textContent = 'Remove';
+                    removeButton.onclick = () => {
+                        if (currentViewer) {
+                            currentViewer.removeROI(urn);
+                            refreshRoiListDisplay(); // Update the list after removal
+                        }
+                    };
+
+                    listItem.appendChild(urnSpan);
+                    listItem.appendChild(removeButton);
+                    roiListElement.appendChild(listItem);
+                });
+            }
+        }
+
+        function initializeViewer() {
+            if (currentViewer) {
+                currentViewer.destroy();
+                currentViewer = null;
+            }
+
+            const urnsToLoad = getUrnsFromUrl();
+            
+            currentViewer = HMTIIIF.createViewer(viewerHostElement, urnsToLoad, {
+                onRectangleSelected: (allUrnsString) => {
+                    // The viewer has already updated its internal list and added the new ROI.
+                    // We just need to refresh our display of that list.
+                    refreshRoiListDisplay();
+                },
+                onQuery: (matchingUrns) => {
+                    if (matchingUrns.length > 0) {
+                        console.log('Query matched:', matchingUrns);
+                        // alert(`Clicked point is within ROIs:\n${matchingUrns.join('\n')}`);
+                    } else {
+                        console.log('Query: No matching ROIs at clicked point.');
+                    }
+                }
+            });
+
+            // Initial display of ROIs (if any were loaded from URL params or default)
+            // A slight delay might be needed if viewer takes time for initial info fetch
+            // that could affect getROIs(), but createViewer now handles initial ROI parsing internally.
+             if (currentViewer) {
+                refreshRoiListDisplay();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeViewer();
+        });
+
+        // Optional: Listen for popstate if you want to re-initialize the viewer 
+        // when the user navigates back/forward and the URL params change.
+        // window.addEventListener('popstate', () => {
+        //     initializeViewer();
+        // });
+    </script>
+</body>
+</html>
+```
+
+**How to use it:**
+
+1.  Save the code above as `test-url-params.html` in the same directory as your `hmt-iiif-lib.js`.
+2.  Open it in your browser:
+    *   **Without parameters:** `file:///path/to/test-url-params.html` (or via a local server `http://localhost/.../test-url-params.html`)
+        *   This will load the default URN: `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`.
+    *   **With a single URN:** `.../test-url-params.html?urn=urn:cite2:hmt:vaimg.2017a:VA013RN_0014`
+    *   **With a base URN and an initial ROI:** `.../test-url-params.html?urn=urn:cite2:hmt:vaimg.2017a:VA012RN_0013&urn=urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.2,0.2,0.1,0.1`
+    *   **With multiple initial ROIs:** `.../test-url-params.html?urn=urn:cite2:hmt:vaimg.2017a:VA012RN_0013&urn=urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.1,0.1&urn=urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.5,0.5,0.2,0.2`
+
+The page will display the viewer and the list of ROIs. You can then:
+*   Select new ROIs on the image using Option/Alt + click-drag; the list will update.
+*   Remove ROIs from the list using the "Remove" button; the image and the list will update.
+
+This test page effectively demonstrates the dynamic ROI management and URL parameter integration.
+
+### USER
+This is fantastic. I’m going to publish it to github. Could you write API documentation for the library?
+
+### ASSISTANT
+Okay, here's API documentation for `hmt-iiif-lib.js`, formatted in Markdown. This would be suitable for a `README.md` file in your GitHub repository.
+
+---
+
+# HMT IIIF Library (`hmt-iiif-lib.js`) API Documentation
+
+`hmt-iiif-lib.js` is a lightweight JavaScript library for interacting with IIIF images from the Homer Multitext Project (HMT). It provides functionality to generate IIIF Image API URLs and to create an interactive image viewer with zoom, pan, region selection, and query capabilities.
+
+## Table of Contents
+
+1.  [Installation](#installation)
+2.  [Core Concepts](#core-concepts)
+    *   [CITE2 URNs for HMT Images](#cite2-urns-for-hmt-images)
+    *   [URN to IIIF Conversion](#urn-to-iiif-conversion)
+    *   [Region of Interest (ROI) Extensions](#region-of-interest-roi-extensions)
+3.  [Global Object: `HMTIIIF`](#global-object-hmtiiif)
+4.  [API Functions](#api-functions)
+    *   [`HMTIIIF.getIIIFImageUrl(urnStr, options)`](#hmtiiifgetiiifimageurlurnstr-options)
+    *   [`HMTIIIF.createViewer(containerIdOrElement, urnOrUrns, viewerOptions)`](#hmtiiifcreateviewercontaineridorelement-urnorurns-vieweroptions)
+5.  [Viewer Instance API](#viewer-instance-api)
+    *   [`viewer.destroy()`](#viewerdestroy)
+    *   [`viewer.addROI(urnWithROI)`](#vieweraddroiurnwithroi)
+    *   [`viewer.removeROI(urnWithROI)`](#viewerremoveroiurnwithroi)
+    *   [`viewer.getROIs()`](#viewergetrois)
+6.  [Viewer Interaction Modes](#viewer-interaction-modes)
+
+## 1. Installation
+
+To use `hmt-iiif-lib.js` in your project via jsDelivr, include the following script tag in your HTML file. Replace `YOUR_USERNAME`, `YOUR_REPO`, and `@VERSION` (e.g., `@1.0.0` or `@latest`) with your actual GitHub repository details and desired version.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/YOUR_USERNAME/YOUR_REPO@VERSION/hmt-iiif-lib.js"></script>
+```
+
+Example using `@latest` (not recommended for production):
+```html
+<script src="https://cdn.jsdelivr.net/gh/YOUR_USERNAME/YOUR_REPO@latest/hmt-iiif-lib.js"></script>
+```
+
+## 2. Core Concepts
+
+### CITE2 URNs for HMT Images
+Images in the Homer Multitext project are identified using CITE2 URNs. These URNs have 5 components separated by colons:
+`urn:cite2:{namespace}:{collection-component}:{object-identifier}`
+
+Example: `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`
+
+*   `urn:cite2`: Standard URN prefix for CITE2.
+*   `hmt`: Namespace (3rd component).
+*   `vaimg.2017a`: Collection component (4th component), typically `group.version`.
+*   `VA012RN_0013`: Object identifier (5th component).
+
+### URN to IIIF Conversion
+The library automatically converts HMT CITE2 URNs into the appropriate IIIF identifiers for the HMT IIIF server.
+*   **Protocol:** `http`
+*   **Server:** `www.homermultitext.org/iipsrv?IIIF=`
+*   **IIIF Prefix Base:** `/project/homer/pyramidal/deepzoom`
+*   **Construction:**
+    1.  Start with the IIIF Prefix Base.
+    2.  Append the URN's `namespace`.
+    3.  The URN's `collection-component` is split by a period (`.`). Append the first part.
+    4.  Append the second part of the `collection-component`.
+    *   Example URN `urn:cite2:hmt:vaimg.2017a:VA012RN_0013` yields IIIF Prefix: `/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a`
+*   **Image Identifier:** Append `.tif` to the URN's `object-identifier`.
+    *   Example: `VA012RN_0013.tif`
+*   **Full `info.json` path example:** `http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/info.json`
+
+### Region of Interest (ROI) Extensions
+URNs can include an ROI extension to specify a rectangular area on the image.
+*   **Format:** `@x,y,w,h` appended to the base URN.
+*   `x,y`: Coordinates of the top-left corner of the rectangle (percentages from 0.0 to 1.0).
+*   `w,h`: Width and height of the rectangle (percentages from 0.0 to 1.0).
+*   Example: `urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15`
+
+## 3. Global Object: `HMTIIIF`
+
+After including the library, a global object `HMTIIIF` is available, which contains the public functions.
+
+```javascript
+console.log(HMTIIIF.createViewer);
+console.log(HMTIIIF.getIIIFImageUrl);
+```
+
+## 4. API Functions
+
+### `HMTIIIF.getIIIFImageUrl(urnStr, options)`
+
+Constructs a IIIF Image API URL for a given HMT CITE2 URN.
+
+*   **Parameters:**
+    *   `urnStr` (String): The CITE2 URN for the image. This URN can optionally include an ROI extension (e.g., `@0.1,0.1,0.2,0.2`).
+    *   `options` (Object, optional): An object containing options for the IIIF request.
+        *   `width` (Number, optional): Desired output width in pixels. Aspect ratio is maintained.
+        *   `height` (Number, optional): Desired output height in pixels. Aspect ratio is maintained.
+        *   If both `width` and `height` are provided, the IIIF `!w,h` syntax is used, ensuring the image fits within these dimensions while preserving aspect ratio. The server typically scales based on the dimension that imposes the greater constraint.
+        *   If only `width` is provided, IIIF `w,` syntax is used.
+        *   If only `height` is provided, IIIF `,h` syntax is used.
+        *   If neither `width` nor `height` is provided, the `size` parameter is set to `full`.
+*   **Returns:** (String) The fully formed IIIF Image API URL for a JPG image, or `null` if the URN is invalid.
+    *   If an ROI is specified in `urnStr`, the IIIF `region` parameter will be set to `pct:x,y,w,h` (values scaled 0-100).
+    *   The IIIF `format` parameter is always set to `jpg`.
+    *   The IIIF `rotation` parameter is always set to `0`.
+    *   The IIIF `quality` parameter is always set to `default`.
+
+*   **Example:**
+    ```javascript
+    const baseUrn = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013';
+    const urnWithRoi = 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.25,0.25';
+
+    // Get full image URL
+    const fullImageUrl = HMTIIIF.getIIIFImageUrl(baseUrn);
+    // console.log(fullImageUrl);
+    // Expected: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/full/full/0/default.jpg
+
+    // Get image with ROI
+    const roiImageUrl = HMTIIIF.getIIIFImageUrl(urnWithRoi);
+    // console.log(roiImageUrl);
+    // Expected: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/pct:10,10,25,25/full/0/default.jpg
+
+    // Get image with specified width
+    const sizedImageUrl = HMTIIIF.getIIIFImageUrl(baseUrn, { width: 800 });
+    // console.log(sizedImageUrl);
+    // Expected: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/full/800,/0/default.jpg
+
+    // Get image with ROI and specified max dimensions
+    const sizedRoiUrl = HMTIIIF.getIIIFImageUrl(urnWithRoi, { width: 200, height: 150 });
+    // console.log(sizedRoiUrl);
+    // Expected: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/pct:10,10,25,25/!200,150/0/default.jpg
+    ```
+
+### `HMTIIIF.createViewer(containerIdOrElement, urnOrUrns, viewerOptions)`
+
+Creates and initializes an interactive IIIF image viewer in the specified HTML container. The viewer supports zooming, panning, and interactions for selecting and querying regions of interest (ROIs). Multiple viewer instances can exist on a single page.
+
+*   **Parameters:**
+    *   `containerIdOrElement` (String | HTMLElement): The ID of the HTML element (e.g., a `<div>`) where the viewer canvas should be created, or a direct reference to the HTMLElement.
+    *   `urnOrUrns` (String | Array<String>):
+        *   If a **String**: The CITE2 URN of the image to display. This URN can include an ROI extension, which will be highlighted initially.
+        *   If an **Array of Strings**:
+            *   The first string in the array **must** be the base CITE2 URN for the image.
+            *   Subsequent strings in the array should be URNs for the same base image but with ROI extensions (e.g., `BASE_URN@x,y,w,h`). These ROIs will be highlighted initially.
+            *   All URNs in the array must refer to the same base image.
+    *   `viewerOptions` (Object, optional): An object for configuring viewer callbacks.
+        *   `onRectangleSelected` (Function, optional): A callback function invoked when the user draws a new rectangle (ROI) on the image.
+            *   **Callback argument:** `allUrnsString` (String) - A newline-separated string containing all currently highlighted ROI URNs (including the newly added one).
+        *   `onQuery` (Function, optional): A callback function invoked when the user Shift-clicks on the image.
+            *   **Callback argument:** `matchingUrns` (Array<String>) - An array of URNs (with ROI extensions) for any highlighted rectangles that contain the clicked point. An empty array is passed if no rectangles match.
+*   **Returns:** (Object) A viewer instance object with methods to interact with the viewer (see [Viewer Instance API](#viewer-instance-api)), or `null` if the container element is not found.
+
+*   **Example:**
+    ```html
+    <div id="viewer1" style="width: 600px; height: 400px; border: 1px solid black;"></div>
+    <div id="viewer2" style="width: 500px; height: 350px; border: 1px solid blue;"></div>
+    <ul id="roiList"></ul>
+    <div id="queryResult"></div>
+    ```
+    ```javascript
+    // Basic viewer
+    const viewer1 = HMTIIIF.createViewer('viewer1', 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013');
+
+    // Viewer with initial ROIs and callbacks
+    const initialUrns = [
+        'urn:cite2:hmt:vaimg.2017a:VA013RN_0014', // Base image
+        'urn:cite2:hmt:vaimg.2017a:VA013RN_0014@0.1,0.1,0.2,0.2', // ROI 1
+        'urn:cite2:hmt:vaimg.2017a:VA013RN_0014@0.5,0.5,0.1,0.3'  // ROI 2
+    ];
+
+    const viewer2 = HMTIIIF.createViewer(document.getElementById('viewer2'), initialUrns, {
+        onRectangleSelected: function(allUrnsString) {
+            console.log("Rectangles selected/updated. All URNs:\n" + allUrnsString);
+            const rois = allUrnsString.split('\n').filter(urn => urn.trim() !== '');
+            const roiListEl = document.getElementById('roiList');
+            roiListEl.innerHTML = rois.map(urn => `<li>${urn} <button onclick="removeRoiFromViewer2('${urn}')">X</button></li>`).join('');
+        },
+        onQuery: function(matchingUrns) {
+            const queryResultEl = document.getElementById('queryResult');
+            if (matchingUrns.length > 0) {
+                queryResultEl.textContent = "Clicked point is within: " + matchingUrns.join(', ');
+            } else {
+                queryResultEl.textContent = "Clicked point is not within any highlighted ROI.";
+            }
+        }
+    });
+    
+    // Helper for the example above
+    function removeRoiFromViewer2(urn) {
+        if (viewer2) {
+            viewer2.removeROI(urn);
+            // The onRectangleSelected callback won't fire on remove, so manually update list
+            const currentRois = viewer2.getROIs();
+            const roiListEl = document.getElementById('roiList');
+            roiListEl.innerHTML = currentRois.map(u => `<li>${u} <button onclick="removeRoiFromViewer2('${u}')">X</button></li>`).join('');
+        }
+    }
+    ```
+
+## 5. Viewer Instance API
+
+The object returned by `HMTIIIF.createViewer` provides methods to programmatically interact with the viewer instance.
+
+### `viewer.destroy()`
+
+Removes the viewer from the DOM and cleans up associated event listeners.
+
+*   **Parameters:** None.
+*   **Returns:** `undefined`.
+*   **Example:**
+    ```javascript
+    // Assuming 'myViewer' is an instance created by HMTIIIF.createViewer
+    // myViewer.destroy();
+    ```
+
+### `viewer.addROI(urnWithROI)`
+
+Programmatically adds a new ROI to be highlighted on the viewer.
+
+*   **Parameters:**
+    *   `urnWithROI` (String): The full CITE2 URN of the image including the ROI extension (e.g., `BASE_URN@x,y,w,h`). The base image part of this URN must match the image currently loaded in the viewer.
+*   **Returns:** (Boolean) `true` if the ROI was successfully added (and was not a duplicate), `false` otherwise (e.g., invalid URN format, base URN mismatch, or duplicate).
+*   **Note:** This method updates the visual display. If you need to update an external list of ROIs, you should call `viewer.getROIs()` afterwards or manage your list separately.
+*   **Example:**
+    ```javascript
+    // const success = myViewer.addROI('urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.7,0.7,0.1,0.1');
+    // if (success) console.log("ROI added programmatically.");
+    ```
+
+### `viewer.removeROI(urnWithROI)`
+
+Programmatically removes a highlighted ROI from the viewer.
+
+*   **Parameters:**
+    *   `urnWithROI` (String): The full CITE2 URN with ROI extension of the rectangle to remove.
+*   **Returns:** (Boolean) `true` if an ROI matching the URN was found and removed, `false` otherwise.
+*   **Note:** This method updates the visual display.
+*   **Example:**
+    ```javascript
+    // const removed = myViewer.removeROI('urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.7,0.7,0.1,0.1');
+    // if (removed) console.log("ROI removed programmatically.");
+    ```
+
+### `viewer.getROIs()`
+
+Retrieves a list of all currently highlighted ROI URNs in the viewer.
+
+*   **Parameters:** None.
+*   **Returns:** (Array<String>) An array of URN strings, each with an ROI extension, representing the currently highlighted rectangles.
+*   **Example:**
+    ```javascript
+    // const currentRois = myViewer.getROIs();
+    // console.log("Current ROIs:", currentRois);
+    ```
+
+## 6. Viewer Interaction Modes
+
+The viewer supports three main interaction modes:
+
+1.  **Standard Image Viewing (Zoom/Pan):**
+    *   **Zoom:** Use the mouse wheel to zoom in and out. The zoom is centered on the mouse cursor's position.
+    *   **Pan:** Click and drag the image to pan.
+    *   **Cursor:** `grab` (when ready to pan), `grabbing` (while panning).
+
+2.  **Rectangle Selection Mode:**
+    *   **Activation:** Hold down the **Option (Alt)** key, then click and drag on the image.
+    *   **Functionality:** Allows the user to draw a new rectangular ROI. Upon releasing the mouse button, the coordinates of the new rectangle (as a URN with ROI extension) are added to the viewer's list of highlighted ROIs. The `onRectangleSelected` callback (if provided) is invoked.
+    *   **Cursor:** `crosshair`.
+
+3.  **Query Mode:**
+    *   **Activation:** Hold down the **Shift** key and click on the image.
+    *   **Functionality:** Checks if the clicked point falls within any of the currently highlighted ROIs. The `onQuery` callback (if provided) is invoked with a list of URNs for all matching ROIs.
+    *   **Cursor:** `help`.
+
+Highlighted ROIs are drawn with a random semi-transparent fill color and no border. The highlights correctly scale and move with the image during zoom and pan operations. The viewer preserves the aspect ratio of the displayed image, potentially leading to letterboxing or pillarboxing within the canvas.
+
+---
