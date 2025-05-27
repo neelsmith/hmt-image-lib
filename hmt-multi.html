@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HMT IIIF Lib - Multiple Viewers Test</title>
+    <title>Multiple image viewers on a web page</title>
     <script src="hmt-iiif-lib.js"></script>
     <style>
         body { font-family: sans-serif; margin: 20px; }
@@ -12,12 +12,13 @@
     </style>
 </head>
 <body>
-    <h1>HMT IIIF Library - Multiple Viewers Test</h1>
+    <h1>How to include multiple image viewers on a web page</h1>
+    <p>Each viewer can be independently zoomed and panned.</p>
 
-    <h2>Viewer 1: urn:cite2:hmt:vaimg.2017a:VA012RN_0013</h2>
+    <h2>Viewer 1: <code>urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.2,0.2</code></h2>
     <div id="viewer1Container" class="viewer-container"></div>
 
-    <h2>Viewer 2: urn:cite2:hmt:vaimg.2017a:VA013RN_0014</h2>
+    <h2>Viewer 2: <code>urn:cite2:hmt:vaimg.2017a:VA013RN_0014</code></h2>
     <div id="viewer2Container" class="viewer-container"></div>
 
     <script>

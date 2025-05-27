@@ -19,8 +19,11 @@ The javascript library in [hmt-iiif-lib.js](./hmt-iiif-lib.js) is designed to si
 
 In addition to the library itself (`hmt-iiif-lib.js`) and the documentation (`apis.md`), this repository includes the following web apps illustrating the library's functionality.
 
-- `hmt-embed.html`: embed a static image in a web page.
-- `hmt-multiple.html`: add multiple interactive viewers to a web page.
+- `hmt-embed.html`: add a static image to a web page.
+- `hmt-multi.html`: add multiple interactive image viewers to a web page.
+- `hmt-interactive.html`: query regions of interest on an image
+- `hmt-ict.html`: collect citations for features on an image. Display regions of interest submitted as URL parameters, and dynamically add to or remove highlighted regions.
+
 
 ## Caveats and technical information
 
