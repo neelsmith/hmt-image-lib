@@ -1,0 +1,1859 @@
+### USER
+  
+I want to build a javascript library named `hmt-image-lib.js`, packaged so that I can add it to a GitHub repo and use it via jsDeliver. The package should include two functions named `createViewer` and `getIIIFImageUrl`.
+  
+`createViewer` accepts a parameter taking a string value for a CITE2 URN identifying an image from the Homer Multitext project (HMT) available through the IIIF protocol; the function should support three separate modes of interaction with the image.
+  
+Here's the information you need to define IIIF requests for the Homer Muiltitext project.
+  
+Protocol: http
+Server: www.homermultitext.org/iipsrv?IIIF=
+Prefix: The information we need to construct the correct prefix is included in the image identifier. Images are identified with CITE2 URN, which have 5 components separated by colons. The IIIF prefix for the HMT server is constructed from a base path `/project/homer/pyramidal/deepzoom`, to which we append three further elements, joining each with a slash `/`. The first piece we append is the URN's namespace, the third colon-delimited component of the URN; the second and third pieces we append are taken from the collection component, which is the fourth colon-delimited part of the URN. This component has two parts separated by a period: we append each of these separately.
+Image: images in the HMT service are in TIF format. To form the correct image identify, append `.tif` to the object identifier (final component of the CITE2 URN.)
+  
+Here's a complete example: for the CITE2 URN `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`, the namespace is `hmt` (third component); the workspace component is `vaimg.2017a` (fourth component); the object identifier is `VA012RN_0013`.  We form the IIIF prefix by joinging to the base path `/project/homer/pyramidal/deepzoom` the namespace value, and two period-separted parts of the collection value. The full  IIIF prefix is therefore  `/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a`. We form the image identifier by appending `.tif` to the objectcompnonent and get `VA012RN_0013.tif`. A complete `info` request for this image on the HMT IIIF service would therefore be `http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/info.json`
+  
+  
+1. The first mode is a standard image viewer that allows the user to zoom and pan the image.  The design should support including multiple instances of a viewer on a single web page, with each viewer supporting panning and zooming of the image it was constructed with. The IIIF viewer should be built from scratch rather than using a library like OpenSeaDragon.  Use anonymous CORS to avoid restrictions on cross-origin access. Take care to ensure that any highlighted regions of interest highlight the same area of the image when the user zooms or pans the image.
+2. The second mode is a rectangle selection mode, which is activated when the user holds down the option key and clicks and drags on the image.  In this mode, the user can draw a rectangle on the image, and the coordinates of the rectangle are returned to a listener function. The coordinates should be formatted as an x,y pair expressed as percentages from 0 to 1, and appended to the URN for the example.  The return value should be a list of these URNs separated by newline characters, so that the user can draw multiple rectangles and get a single string of coordinates back.  The user should be able to draw multiple rectangles, and the coordinates of each rectangle should be returned in a single multiline string, one URN per line. Rectangles should be drawn with a random semi-transparent fill color, and no border.
+3. The third mode is a query mode, which is activated when the user holds down the shift key and clicks on the image. In this mode, the image viewer should check to see if the point that the user has clicked is within the bounds of any of the highlighted rectangles. Note that since rectangles could overlap, the point could lie within zero, one or more rectangles.  A list of the rectangles should be passed to a listener function. If the point lies within zero rectangles, an empty list should be passed to the listener function. The rectangles should be identified as image URNs with ROI extension, i.e. @x,y,w,h where x,y,w,h are all expressed as percentages from 0 to 1, and appended to the basic URN for the image.
+  
+**Tests**: To test `createViewer`, please also write two HTML files. One should test displaying two images with the URNs `urn:cite2:hmt:vaimg.2017a:VA012RN_0013` and `urn:cite2:hmt:vaimg.2017a:VA013RN_0014`. The second HTML file should test the rectangle selection and query modes.  Allow the user to enter a URN (default: `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`), and display a list of highlighted retangles if any. Update the list when the user adds a new rectangle by option-clicking. When the user shift-clicks, display a message with the URN of any rectangles that contain the clicked point. Note that since rectangles could overlap, the point could lie within zero, one or more rectangles.  A list of the rectangles should be passed to a listener function. If the point lies within zero rectangles, an empty list should be passed to the listener function. The rectangles should be identified as image URNs with ROI extension, i.e. @x,y,w,h where x,y,w,h are all expressed as percentages from 0 to 1, and appended to the basic URN for the image.
+  
+  
+The second function, `getIIIFImageUrl`, should accept a URN for an image, and return a string with the IIIF request for the image. The function should allow optional parameters to set an output width or height, but should ensure that aspect is maintained. If both width and height are set, the function should use the larger of the two to determine the scaling factor. If the URN includes an ROI extension, the function should use set the IIIF `pct:x,y,w,h` parameters the values in the extension scaled from 0 to 100. For example, if the URN is `urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.50,0.40,0.15`, the IIIF request should include `pct:25,50,40,15`. The function should also set the IIIF `size` parameter to the width and height of the image in pixels, scaled to the requested size. If no size is requested, the function should set the IIIF `size` parameter to `full`. The function should also set the IIIF `format` parameter to `jpg`.
+The function should return a string with the full IIIF request for the image, including all parameters.
+  
+**Test**:  Please write an HTML test page that allows a user to enter an image URN and optional values for width and height, displays the URN value on the page, and then displays the image retrieved with the IIIF request.
+
+### ASSISTANT
+Okay, this is a comprehensive request! I'll break this down into the JavaScript library `hmt-image-lib.js` and the HTML test files.
+
+Let's start with the `hmt-image-lib.js` file.
+
+```javascript
+// hmt-image-lib.js
+(function (global) {
+    'use strict';
+
+    const IIIF_PROTOCOL = 'http';
+    const IIIF_SERVER = 'www.homermultitext.org/iipsrv?IIIF=';
+    const IIIF_BASE_PATH = '/project/homer/pyramidal/deepzoom';
+
+    // --- Helper function to parse URN ---
+    function parseURN(urnString) {
+        if (!urnString || typeof urnString !== 'string') {
+            console.error('Invalid URN string:', urnString);
+            return null;
+        }
+
+        const parts = urnString.split(':');
+        if (parts.length < 5) {
+            console.error('URN string too short:', urnString);
+            return null;
+        }
+
+        const baseUrnParts = parts.slice(0, 5);
+        let roi = null;
+        const objectIdFull = parts[4];
+        let objectId = objectIdFull;
+
+        if (objectIdFull.includes('@')) {
+            const objectIdAndRoi = objectIdFull.split('@');
+            objectId = objectIdAndRoi[0];
+            baseUrnParts[4] = objectId; // Update base URN to not include ROI
+
+            if (objectIdAndRoi.length > 1 && objectIdAndRoi[1]) {
+                const roiParts = objectIdAndRoi[1].split(',');
+                if (roiParts.length === 4) {
+                    roi = {
+                        x: parseFloat(roiParts[0]),
+                        y: parseFloat(roiParts[1]),
+                        w: parseFloat(roiParts[2]),
+                        h: parseFloat(roiParts[3]),
+                    };
+                } else {
+                    console.warn('Invalid ROI format in URN:', urnString);
+                }
+            }
+        }
+        
+        const namespace = parts[2];
+        const collectionVersion = parts[3];
+        const collectionParts = collectionVersion.split('.');
+        
+        if (collectionParts.length < 2) {
+            console.error('Invalid collection component in URN:', urnString);
+            return null;
+        }
+
+        return {
+            baseUrn: baseUrnParts.join(':'),
+            namespace: namespace,
+            collectionPart1: collectionParts[0],
+            collectionPart2: collectionParts[1],
+            objectId: objectId,
+            roi: roi
+        };
+    }
+
+    // --- getIIIFImageUrl ---
+    function getIIIFImageUrl(urnString, options = {}) {
+        const parsedUrn = parseURN(urnString);
+        if (!parsedUrn) return null;
+
+        const { namespace, collectionPart1, collectionPart2, objectId, roi } = parsedUrn;
+
+        const iiifPrefix = `${IIIF_BASE_PATH}/${namespace}/${collectionPart1}/${collectionPart2}`;
+        const imageIdentifier = `${objectId}.tif`;
+
+        let regionParam = 'full';
+        if (roi) {
+            regionParam = `pct:${roi.x * 100},${roi.y * 100},${roi.w * 100},${roi.h * 100}`;
+        } else if (options.region) { // Allow overriding region for viewer
+             regionParam = options.region;
+        }
+
+
+        let sizeParam = 'full';
+        if (options.width && options.height) {
+            // "If both width and height are set, the function should use the larger of the two to determine the scaling factor."
+            // This implies scaling to one dimension, maintaining aspect.
+            if (options.width >= options.height) { // Prioritize width if width is larger or equal
+                sizeParam = `${Math.round(options.width)},`;
+            } else { // Prioritize height if height is larger
+                sizeParam = `,${Math.round(options.height)}`;
+            }
+        } else if (options.width) {
+            sizeParam = `${Math.round(options.width)},`;
+        } else if (options.height) {
+            sizeParam = `,${Math.round(options.height)}`;
+        } else if (options.size) { // Allow overriding size for viewer
+            sizeParam = options.size;
+        }
+
+
+        const rotationParam = '0';
+        const qualityParam = 'default';
+        const formatParam = 'jpg';
+
+        return `${IIIF_PROTOCOL}://${IIIF_SERVER}${iiifPrefix}/${imageIdentifier}/${regionParam}/${sizeParam}/${rotationParam}/${qualityParam}.${formatParam}`;
+    }
+
+    // --- HMTImageViewer Class ---
+    class HMTImageViewer {
+        constructor(elementId, urnString, viewerOptions = {}) {
+            this.container = document.getElementById(elementId);
+            if (!this.container) {
+                throw new Error(`Element with ID '${elementId}' not found.`);
+            }
+            this.container.innerHTML = ''; // Clear container
+
+            this.baseUrnParsed = parseURN(urnString);
+            if (!this.baseUrnParsed) {
+                throw new Error(`Invalid URN for viewer: ${urnString}`);
+            }
+            this.baseUrn = this.baseUrnParsed.baseUrn;
+
+            this.rectangleSelectedListener = viewerOptions.rectangleSelectedListener || function() {};
+            this.queryListener = viewerOptions.queryListener || function() {};
+
+            this.canvas = document.createElement('canvas');
+            this.canvas.style.cursor = 'grab';
+            this.ctx = this.canvas.getContext('2d');
+            this.container.appendChild(this.canvas);
+
+            this.originalWidth = 0;
+            this.originalHeight = 0;
+            this.currentImage = new Image();
+            this.currentImage.crossOrigin = "Anonymous"; // Handle CORS
+
+            this.rectangles = []; // { urnWithRoi, x, y, w, h, color }
+
+            // View state
+            this.currentScale = 1.0; // Scale of original image to display
+            this.viewOriginX = 0;    // Canvas X coord of original image's top-left
+            this.viewOriginY = 0;    // Canvas Y coord of original image's top-left
+
+            // Interaction state
+            this.isPanning = false;
+            this.isSelecting = false;
+            this.lastMouseX = 0;
+            this.lastMouseY = 0;
+            this.selectionStartX = 0; // In image percentage coords
+            this.selectionStartY = 0; // In image percentage coords
+            this.currentSelectionRect = null; // {x,y,w,h} in percentage for drawing feedback
+
+            this.optionKeyDown = false;
+            this.shiftKeyDown = false;
+
+            this._initEventListeners();
+        }
+
+        async init() {
+            try {
+                const infoUrl = `${IIIF_PROTOCOL}://${IIIF_SERVER}${IIIF_BASE_PATH}/${this.baseUrnParsed.namespace}/${this.baseUrnParsed.collectionPart1}/${this.baseUrnParsed.collectionPart2}/${this.baseUrnParsed.objectId}.tif/info.json`;
+                const response = await fetch(infoUrl, { mode: 'cors' });
+                if (!response.ok) throw new Error(`Failed to fetch image info: ${response.statusText}`);
+                const infoData = await response.json();
+                this.originalWidth = infoData.width;
+                this.originalHeight = infoData.height;
+
+                this.resizeCanvasToContainer();
+                this.fitImageToCanvas(); // Sets initial scale and viewOrigin
+                this.loadCurrentImage();
+            } catch (error) {
+                console.error("Error initializing viewer:", error);
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.fillText(`Error: ${error.message}`, 10, 50);
+            }
+        }
+        
+        resizeCanvasToContainer() {
+            this.canvas.width = this.container.clientWidth;
+            this.canvas.height = this.container.clientHeight;
+        }
+
+        fitImageToCanvas(mode = 'width') { // 'width', 'height', 'contain'
+            if (this.originalWidth === 0 || this.originalHeight === 0) return;
+
+            const canvasAspect = this.canvas.width / this.canvas.height;
+            const imageAspect = this.originalWidth / this.originalHeight;
+
+            if (mode === 'contain') {
+                if (imageAspect > canvasAspect) { // Image is wider than canvas
+                    this.currentScale = this.canvas.width / this.originalWidth;
+                } else { // Image is taller or same aspect
+                    this.currentScale = this.canvas.height / this.originalHeight;
+                }
+            } else if (mode === 'height') {
+                 this.currentScale = this.canvas.height / this.originalHeight;
+            } else { // Default 'width' or any other value
+                 this.currentScale = this.canvas.width / this.originalWidth;
+            }
+            
+            const displayWidth = this.originalWidth * this.currentScale;
+            const displayHeight = this.originalHeight * this.currentScale;
+
+            this.viewOriginX = (this.canvas.width - displayWidth) / 2;
+            this.viewOriginY = (this.canvas.height - displayHeight) / 2;
+        }
+
+        loadCurrentImage() {
+            if (this.originalWidth === 0 || this.originalHeight === 0) return;
+            
+            // Calculate the size of the image to request based on currentScale and canvas size
+            // We want an image that, when drawn at currentScale, covers the canvas
+            // The actual size needed from IIIF depends on how much of the original image is visible
+            const visibleImageWidth = this.canvas.width / this.currentScale;
+            const visibleImageHeight = this.canvas.height / this.currentScale;
+
+            // Determine the IIIF region in original image pixel coordinates
+            let regionX = -this.viewOriginX / this.currentScale;
+            let regionY = -this.viewOriginY / this.currentScale;
+            let regionW = this.canvas.width / this.currentScale;
+            let regionH = this.canvas.height / this.currentScale;
+            
+            // Clip region to image boundaries
+            regionX = Math.max(0, regionX);
+            regionY = Math.max(0, regionY);
+            regionW = Math.min(this.originalWidth - regionX, regionW);
+            regionH = Math.min(this.originalHeight - regionY, regionH);
+            
+            // If clipping makes width/height non-positive, adjust (e.g. image fully out of view)
+            if (regionW <=0 || regionH <= 0) {
+                // This case might mean the image is panned completely out of view.
+                // For now, let's just clear and not load. Or load a small default.
+                // Or it means the scale is so tiny that calculations are problematic.
+                this.redraw(); // just clear
+                return;
+            }
+            
+            const iiifRegionParam = `${Math.round(regionX)},${Math.round(regionY)},${Math.round(regionW)},${Math.round(regionH)}`;
+            const iiifSizeParam = `!${this.canvas.width},${this.canvas.height}`; // Request image scaled to fit canvas
+
+            const imageUrl = getIIIFImageUrl(this.baseUrn, {
+                region: iiifRegionParam,
+                size: iiifSizeParam
+            });
+
+            if (!imageUrl) {
+                console.error("Could not generate image URL for viewer display.");
+                return;
+            }
+            
+            this.currentImage.onload = () => {
+                // The loaded image (this.currentImage) is the requested region, scaled to fit the canvas.
+                // We need to draw it at 0,0 on the canvas.
+                this.redraw();
+            };
+            this.currentImage.onerror = (e) => {
+                console.error("Error loading image:", imageUrl, e);
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillText(`Error loading image.`, 10, 50);
+
+            };
+            this.currentImage.src = imageUrl;
+        }
+
+        redraw() {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+            if (this.currentImage.complete && this.currentImage.naturalWidth > 0) {
+                 // The this.currentImage is already the correctly scaled and cropped piece.
+                 // It should be drawn at (0,0) of the canvas, filling it (or fitting within it,
+                 // depending on the `!w,h` behavior of IIIF server for aspect ratio).
+                 // Let's assume it fills the dimension it was scaled to.
+                 let drawW = this.currentImage.width;
+                 let drawH = this.currentImage.height;
+                 let drawX = (this.canvas.width - drawW) / 2;
+                 let drawY = (this.canvas.height - drawH) / 2;
+
+                 this.ctx.drawImage(this.currentImage, drawX, drawY, drawW, drawH);
+            }
+
+
+            // Draw rectangles
+            this.rectangles.forEach(rect => {
+                this.ctx.fillStyle = rect.color;
+                const canvasRectX = this.viewOriginX + (rect.x * this.originalWidth * this.currentScale);
+                const canvasRectY = this.viewOriginY + (rect.y * this.originalHeight * this.currentScale);
+                const canvasRectW = rect.w * this.originalWidth * this.currentScale;
+                const canvasRectH = rect.h * this.originalHeight * this.currentScale;
+                this.ctx.fillRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+            });
+
+            // Draw current selection feedback
+            if (this.isSelecting && this.currentSelectionRect) {
+                this.ctx.fillStyle = 'rgba(0, 100, 255, 0.3)'; // Blueish feedback
+                this.ctx.strokeStyle = 'rgba(0, 100, 255, 0.7)';
+                this.ctx.lineWidth = 1;
+                const cs = this.currentSelectionRect;
+                const canvasRectX = this.viewOriginX + (cs.x * this.originalWidth * this.currentScale);
+                const canvasRectY = this.viewOriginY + (cs.y * this.originalHeight * this.currentScale);
+                const canvasRectW = cs.w * this.originalWidth * this.currentScale;
+                const canvasRectH = cs.h * this.originalHeight * this.currentScale;
+                this.ctx.fillRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+                this.ctx.strokeRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+            }
+        }
+
+        _getMousePosOnCanvas(event) {
+            const rect = this.canvas.getBoundingClientRect();
+            return {
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top
+            };
+        }
+
+        _canvasToImagePercentCoords(canvasX, canvasY) {
+            if (this.originalWidth === 0 || this.originalHeight === 0 || this.currentScale === 0) {
+                return { x:0, y:0 }; // Avoid division by zero
+            }
+            const imagePxX = (canvasX - this.viewOriginX) / this.currentScale;
+            const imagePxY = (canvasY - this.viewOriginY) / this.currentScale;
+            return {
+                x: imagePxX / this.originalWidth,
+                y: imagePxY / this.originalHeight
+            };
+        }
+
+        _initEventListeners() {
+            this.canvas.addEventListener('mousedown', this._onMouseDown.bind(this));
+            this.canvas.addEventListener('mousemove', this._onMouseMove.bind(this));
+            this.canvas.addEventListener('mouseup', this._onMouseUp.bind(this));
+            this.canvas.addEventListener('mouseleave', this._onMouseLeave.bind(this));
+            this.canvas.addEventListener('wheel', this._onWheel.bind(this), { passive: false });
+            this.canvas.addEventListener('click', this._onClick.bind(this));
+
+            // It's more reliable to check key status directly from the event object
+            // than to track keydown/keyup for option/shift states during drag operations.
+            // So, this.optionKeyDown and this.shiftKeyDown are not strictly needed if we check event.altKey / event.shiftKey
+        }
+
+        _onMouseDown(event) {
+            const pos = this._getMousePosOnCanvas(event);
+            this.lastMouseX = pos.x;
+            this.lastMouseY = pos.y;
+
+            if (event.altKey) { // Option key
+                this.isSelecting = true;
+                this.isPanning = false;
+                this.canvas.style.cursor = 'crosshair';
+                const startPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                this.selectionStartX = startPercentCoords.x;
+                this.selectionStartY = startPercentCoords.y;
+                this.currentSelectionRect = {
+                    x: this.selectionStartX,
+                    y: this.selectionStartY,
+                    w: 0,
+                    h: 0
+                };
+            } else {
+                this.isPanning = true;
+                this.isSelecting = false;
+                this.canvas.style.cursor = 'grabbing';
+            }
+        }
+
+        _onMouseMove(event) {
+            if (!this.isPanning && !this.isSelecting) return;
+            const pos = this._getMousePosOnCanvas(event);
+
+            if (this.isPanning) {
+                const dx = pos.x - this.lastMouseX;
+                const dy = pos.y - this.lastMouseY;
+                this.viewOriginX += dx;
+                this.viewOriginY += dy;
+                this.lastMouseX = pos.x;
+                this.lastMouseY = pos.y;
+                this.loadCurrentImage(); // Reload image for panned view
+            } else if (this.isSelecting) {
+                const currentPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                const x1 = Math.min(this.selectionStartX, currentPercentCoords.x);
+                const y1 = Math.min(this.selectionStartY, currentPercentCoords.y);
+                const x2 = Math.max(this.selectionStartX, currentPercentCoords.x);
+                const y2 = Math.max(this.selectionStartY, currentPercentCoords.y);
+                this.currentSelectionRect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+                this.redraw();
+            }
+        }
+
+        _onMouseUp(event) {
+            if (this.isPanning) {
+                this.isPanning = false;
+                this.canvas.style.cursor = 'grab';
+            } else if (this.isSelecting) {
+                this.isSelecting = false;
+                this.canvas.style.cursor = 'grab';
+                if (this.currentSelectionRect && this.currentSelectionRect.w > 0.001 && this.currentSelectionRect.h > 0.001) { // Min size
+                    // Clamp selection to [0,1] range for percentages
+                    let { x, y, w, h } = this.currentSelectionRect;
+                    x = Math.max(0, Math.min(1 - w, x)); // Ensure x and x+w are within [0,1]
+                    y = Math.max(0, Math.min(1 - h, y)); // Ensure y and y+h are within [0,1]
+                    w = Math.max(0, Math.min(1 - x, w));
+                    h = Math.max(0, Math.min(1 - y, h));
+                    
+                    // Ensure w and h are positive
+                    if (w <= 0 || h <= 0) {
+                        this.currentSelectionRect = null;
+                        this.redraw();
+                        return;
+                    }
+
+                    const newRect = {
+                        x: x, y: y, w: w, h: h,
+                        urnWithRoi: `${this.baseUrn}@${x.toFixed(4)},${y.toFixed(4)},${w.toFixed(4)},${h.toFixed(4)}`,
+                        color: `rgba(${Math.floor(Math.random()*255)}, ${Math.floor(Math.random()*255)}, ${Math.floor(Math.random()*255)}, 0.5)`
+                    };
+                    this.rectangles.push(newRect);
+                    const allRectUrns = this.rectangles.map(r => r.urnWithRoi).join('\n');
+                    this.rectangleSelectedListener(allRectUrns);
+                }
+                this.currentSelectionRect = null;
+                this.redraw();
+            }
+        }
+        
+        _onMouseLeave(event) {
+            // Optional: If panning or selecting, could cancel the operation.
+            // For simplicity, we'll let mouseup handle it.
+            // If panning, and mouse leaves then re-enters and mouseup occurs, it's fine.
+        }
+
+        _onWheel(event) {
+            event.preventDefault();
+            const pos = this._getMousePosOnCanvas(event);
+            const zoomIntensity = 0.1;
+            const delta = event.deltaY < 0 ? 1 + zoomIntensity : 1 - zoomIntensity;
+
+            // Calculate image point under mouse before zoom
+            const imgPtX = (pos.x - this.viewOriginX) / this.currentScale;
+            const imgPtY = (pos.y - this.viewOriginY) / this.currentScale;
+
+            this.currentScale *= delta;
+            // Clamp scale to avoid extreme zoom
+            this.currentScale = Math.max(0.01, Math.min(this.currentScale, 20)); 
+
+            // Adjust viewOrigin so the image point under mouse stays the same
+            this.viewOriginX = pos.x - (imgPtX * this.currentScale);
+            this.viewOriginY = pos.y - (imgPtY * this.currentScale);
+
+            this.loadCurrentImage();
+        }
+
+        _onClick(event) {
+            if (event.shiftKey) {
+                const pos = this._getMousePosOnCanvas(event);
+                const clickPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                
+                const clickedRects = this.rectangles.filter(rect => {
+                    return clickPercentCoords.x >= rect.x &&
+                           clickPercentCoords.x <= rect.x + rect.w &&
+                           clickPercentCoords.y >= rect.y &&
+                           clickPercentCoords.y <= rect.y + rect.h;
+                });
+                
+                this.queryListener(clickedRects.map(r => r.urnWithRoi));
+            }
+        }
+        
+        // Public method to update URN if needed (e.g. from test page input)
+        async setUrn(newUrnString) {
+            this.baseUrnParsed = parseURN(newUrnString);
+            if (!this.baseUrnParsed) {
+                console.error(`Invalid URN for viewer: ${newUrnString}`);
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillText(`Error: Invalid URN.`, 10, 50);
+                return;
+            }
+            this.baseUrn = this.baseUrnParsed.baseUrn;
+            this.rectangles = []; // Clear existing rectangles for new image
+            this.rectangleSelectedListener(""); // Notify listener
+            this.queryListener([]); // Notify listener
+            await this.init(); // Re-initialize with new URN
+        }
+        
+        destroy() {
+            // Basic cleanup, remove event listeners, clear container
+            this.canvas.removeEventListener('mousedown', this._onMouseDown);
+            this.canvas.removeEventListener('mousemove', this._onMouseMove);
+            this.canvas.removeEventListener('mouseup', this._onMouseUp);
+            this.canvas.removeEventListener('mouseleave', this._onMouseLeave);
+            this.canvas.removeEventListener('wheel', this._onWheel);
+            this.canvas.removeEventListener('click', this._onClick);
+            if (this.container && this.canvas.parentNode === this.container) {
+                this.container.removeChild(this.canvas);
+            }
+            this.container.innerHTML = ''; // Clear container
+        }
+    }
+
+    // --- createViewer factory function ---
+    function createViewer(elementId, urnString, viewerOptions = {}) {
+        try {
+            const viewer = new HMTImageViewer(elementId, urnString, viewerOptions);
+            viewer.init(); // Asynchronously fetches info.json and initial image
+            return viewer; // Return the instance for potential further interaction (e.g., destroy, setUrn)
+        } catch (error) {
+            console.error(`Failed to create viewer for ${elementId}:`, error);
+            const container = document.getElementById(elementId);
+            if (container) {
+                container.innerHTML = `<p style="color:red;">Error creating viewer: ${error.message}</p>`;
+            }
+            return null;
+        }
+    }
+
+    const HMTImageLib = {
+        createViewer,
+        getIIIFImageUrl,
+        _parseURN: parseURN // Expose for testing or advanced use if needed
+    };
+
+    global.HMTImageLib = HMTImageLib;
+
+}(typeof window !== 'undefined' ? window : this));
+```
+
+Now for the HTML test files.
+
+**1. `test_viewer_multiple.html`** (Tests displaying two images with zoom/pan)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HMT Image Lib - Multiple Viewers Test</title>
+    <script src="hmt-image-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .viewer-container {
+            width: 600px;
+            height: 400px;
+            border: 1px solid #ccc;
+            margin-bottom: 20px;
+            overflow: hidden; /* Important if canvas tries to be bigger */
+        }
+        h2 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1>HMT Image Library - Multiple Viewers Test</h1>
+
+    <p>Test zoom (mouse wheel) and pan (click and drag) on both images.</p>
+
+    <h2>Viewer 1: urn:cite2:hmt:vaimg.2017a:VA012RN_0013</h2>
+    <div id="viewer1" class="viewer-container"></div>
+
+    <h2>Viewer 2: urn:cite2:hmt:vaimg.2017a:VA013RN_0014</h2>
+    <div id="viewer2" class.viewer-container"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const viewer1 = HMTImageLib.createViewer('viewer1', 'urn:cite2:hmt:vaimg.2017a:VA012RN_0013');
+            const viewer2 = HMTImageLib.createViewer('viewer2', 'urn:cite2:hmt:vaimg.2017a:VA013RN_0014');
+        });
+    </script>
+</body>
+</html>
+```
+
+**2. `test_viewer_interactive.html`** (Tests rectangle selection and query modes)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HMT Image Lib - Interactive Test</title>
+    <script src="hmt-image-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; display: flex; gap: 20px;}
+        .controls { width: 300px; }
+        .viewer-container {
+            width: 800px;
+            height: 600px;
+            border: 1px solid #ccc;
+            overflow: hidden;
+        }
+        textarea, pre { width: 100%; box-sizing: border-box; min-height: 100px; font-size: 0.9em; }
+        label { display: block; margin-bottom: 5px; }
+        input[type="text"] { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+        button { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h1>HMT Image Library - Interactive Test</h1>
+        
+        <label for="urnInput">Image URN:</label>
+        <input type="text" id="urnInput" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
+        <button id="loadUrnButton">Load/Update Image</button>
+
+        <p>
+            <strong>Rectangle Selection:</strong> Hold <code>Option</code> (or <code>Alt</code>) key, then click and drag on the image.
+        </p>
+        <label for="selectedRectangles">Selected Rectangles (URNs with ROI):</label>
+        <textarea id="selectedRectangles" rows="5" readonly></textarea>
+
+        <p>
+            <strong>Query Mode:</strong> Hold <code>Shift</code> key, then click on the image.
+        </p>
+        <label for="queryResult">Query Result (Rectangles containing click point):</label>
+        <pre id="queryResult"></pre>
+    </div>
+
+    <div id="interactiveViewer" class="viewer-container"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const urnInput = document.getElementById('urnInput');
+            const loadUrnButton = document.getElementById('loadUrnButton');
+            const selectedRectanglesTextarea = document.getElementById('selectedRectangles');
+            const queryResultPre = document.getElementById('queryResult');
+
+            let currentViewer = null;
+
+            function rectangleSelectedListener(urnsWithRoiString) {
+                selectedRectanglesTextarea.value = urnsWithRoiString;
+            }
+
+            function queryListener(matchingUrnsList) {
+                if (matchingUrnsList.length > 0) {
+                    queryResultPre.textContent = "Clicked point is within:\n" + matchingUrnsList.join('\n');
+                } else {
+                    queryResultPre.textContent = "Clicked point is not within any highlighted rectangle.";
+                }
+            }
+            
+            function setupViewer(urn) {
+                if (currentViewer) {
+                    // If you implement a destroy method on the viewer:
+                    // currentViewer.destroy(); 
+                    // For now, just re-use or re-create
+                }
+                 // Destroy existing viewer instance if it exists
+                if (currentViewer && typeof currentViewer.destroy === 'function') {
+                    currentViewer.destroy();
+                }
+                currentViewer = HMTImageLib.createViewer('interactiveViewer', urn, {
+                    rectangleSelectedListener: rectangleSelectedListener,
+                    queryListener: queryListener
+                });
+
+                // If createViewer fails (e.g. bad URN initially)
+                if (!currentViewer && document.getElementById('interactiveViewer').textContent.includes("Error")) {
+                    selectedRectanglesTextarea.value = "";
+                    queryResultPre.textContent = "";
+                }
+            }
+            
+            loadUrnButton.addEventListener('click', () => {
+                 // If a viewer exists and has a setUrn method (as added in the JS)
+                if (currentViewer && typeof currentViewer.setUrn === 'function') {
+                    currentViewer.setUrn(urnInput.value.trim());
+                     // Clear outputs as setUrn resets rectangles
+                    selectedRectanglesTextarea.value = "";
+                    queryResultPre.textContent = "";
+                } else { // Otherwise, create a new one
+                    setupViewer(urnInput.value.trim());
+                }
+            });
+
+            // Initial load
+            setupViewer(urnInput.value.trim());
+        });
+    </script>
+</body>
+</html>
+```
+
+**3. `test_getIIIFImageUrl.html`** (Tests the `getIIIFImageUrl` function)
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HMT Image Lib - getIIIFImageUrl Test</title>
+    <script src="hmt-image-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: inline-block; width: 100px; }
+        input[type="text"], input[type="number"] { width: 400px; padding: 5px; }
+        #generatedUrl { 
+            word-break: break-all; 
+            background-color: #f0f0f0; 
+            padding: 10px; 
+            margin-top: 10px; 
+            border: 1px solid #ddd;
+        }
+        #imagePreview { 
+            margin-top: 20px; 
+            border: 1px solid #ccc; 
+            max-width: 100%; 
+            max-height: 600px; /* constrain preview height */
+        }
+    </style>
+</head>
+<body>
+    <h1>HMT Image Library - <code>getIIIFImageUrl</code> Test</h1>
+
+    <div class="form-group">
+        <label for="urn">URN:</label>
+        <input type="text" id="urn" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.1,0.5,0.5">
+    </div>
+    <div class="form-group">
+        <label for="width">Width (opt):</label>
+        <input type="number" id="width" placeholder="e.g., 800">
+    </div>
+    <div class="form-group">
+        <label for="height">Height (opt):</label>
+        <input type="number" id="height" placeholder="e.g., 600">
+    </div>
+    <button id="generateUrlButton">Generate IIIF URL & Display Image</button>
+
+    <h3>Generated URN Value:</h3>
+    <pre id="urnValueDisplay"></pre>
+
+    <h3>Generated IIIF Image URL:</h3>
+    <pre id="generatedUrl"></pre>
+
+    <h3>Image Preview:</h3>
+    <img id="imagePreview" src="#" alt="Image preview will appear here">
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const urnInput = document.getElementById('urn');
+            const widthInput = document.getElementById('width');
+            const heightInput = document.getElementById('height');
+            const generateUrlButton = document.getElementById('generateUrlButton');
+            const urnValueDisplay = document.getElementById('urnValueDisplay');
+            const generatedUrlPre = document.getElementById('generatedUrl');
+            const imagePreviewImg = document.getElementById('imagePreview');
+
+            function updateImage() {
+                const urn = urnInput.value.trim();
+                const width = widthInput.value ? parseInt(widthInput.value) : undefined;
+                const height = heightInput.value ? parseInt(heightInput.value) : undefined;
+
+                urnValueDisplay.textContent = urn;
+
+                const options = {};
+                if (width) options.width = width;
+                if (height) options.height = height;
+
+                const iiifUrl = HMTImageLib.getIIIFImageUrl(urn, options);
+
+                if (iiifUrl) {
+                    generatedUrlPre.textContent = iiifUrl;
+                    imagePreviewImg.src = iiifUrl;
+                    imagePreviewImg.style.display = 'block';
+                } else {
+                    generatedUrlPre.textContent = "Error generating URL. Check console.";
+                    imagePreviewImg.src = "#";
+                    imagePreviewImg.style.display = 'none';
+                }
+            }
+
+            generateUrlButton.addEventListener('click', updateImage);
+            
+            // Initial generation if URN is pre-filled
+            if (urnInput.value) {
+                 updateImage();
+            }
+        });
+    </script>
+</body>
+</html>
+```
+
+**To use this:**
+
+1.  Save the JavaScript code as `hmt-image-lib.js`.
+2.  Save the HTML files (e.g., `test_viewer_multiple.html`, `test_viewer_interactive.html`, `test_getIIIFImageUrl.html`) in the same directory.
+3.  Open the HTML files in your browser.
+
+**Notes on the Implementation:**
+
+*   **URN Parsing:** The `parseURN` helper is fairly robust but assumes valid URN structure.
+*   **`getIIIFImageUrl` Sizing:** Implemented the specific logic for `width` and `height` options as interpreted from the prompt ("use the larger of the two to determine the scaling factor" means prioritize scaling by the larger requested dimension while maintaining aspect ratio).
+*   **`createViewer`:**
+    *   It's built "from scratch" using Canvas API.
+    *   **Zoom/Pan:** Implemented by recalculating the IIIF `region` and `size` parameters to fetch an appropriately cropped and scaled image from the server. This is more efficient for large images than loading one massive image and scaling/panning client-side.
+    *   **ROI Drawing:** Rectangles are drawn based on their percentage coordinates, correctly scaling and panning with the image.
+    *   **Interaction Modes:** Option-click-drag for selection, Shift-click for query.
+    *   **CORS:** `crossOrigin="Anonymous"` is set for image loading, and `info.json` is fetched with `mode: 'cors'`.
+    *   **Error Handling:** Basic error messages for invalid URNs or image loading failures.
+    *   **Responsiveness:** The canvas is sized to its container. You might want to add a `ResizeObserver` to the `HMTImageViewer` to handle container resizes dynamically and call `resizeCanvasToContainer`, `fitImageToCanvas`, and `loadCurrentImage`. (This is not included for brevity but is a common enhancement).
+*   **jsDelivr:** The library is wrapped in an IIFE and exposes `HMTImageLib` to the global scope, making it suitable for jsDelivr.
+*   **Test pages:** Provide UI to test the core functionalities. The interactive test page also includes a button to update the URN for the viewer.
+
+This solution should meet all the specified requirements. Remember that building a full-featured IIIF viewer from scratch is complex; this implementation covers the core requests but could be extended with more advanced features (like smoother transitions, tiling for extremely large images, etc.) if needed.
+
+### USER
+This is a great first version! Could you write an HTML test page that allows user to enter a URN (default: `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`), displays the current list of any highlighted rectangles, and then allows users to remove a rectangle from the current list? This should update the display of the image, and the displayed list of highlighted rectangles. Please use a different cursor for each of the 3 user modes.
+
+### ASSISTANT
+Okay, this requires modifications to the `hmt-image-lib.js` for enhanced cursor control and a new method to remove rectangles, plus a new HTML test page.
+
+First, let's update `hmt-image-lib.js`:
+
+**Updated `hmt-image-lib.js` (with cursor changes and `removeRectangle` method):**
+
+```javascript
+// hmt-image-lib.js
+(function (global) {
+    'use strict';
+
+    const IIIF_PROTOCOL = 'http';
+    const IIIF_SERVER = 'www.homermultitext.org/iipsrv?IIIF=';
+    const IIIF_BASE_PATH = '/project/homer/pyramidal/deepzoom';
+
+    // --- Helper function to parse URN ---
+    function parseURN(urnString) {
+        if (!urnString || typeof urnString !== 'string') {
+            console.error('Invalid URN string:', urnString);
+            return null;
+        }
+
+        const parts = urnString.split(':');
+        if (parts.length < 5) {
+            console.error('URN string too short:', urnString);
+            return null;
+        }
+
+        const baseUrnParts = parts.slice(0, 5);
+        let roi = null;
+        const objectIdFull = parts[4];
+        let objectId = objectIdFull;
+
+        if (objectIdFull.includes('@')) {
+            const objectIdAndRoi = objectIdFull.split('@');
+            objectId = objectIdAndRoi[0];
+            baseUrnParts[4] = objectId; 
+
+            if (objectIdAndRoi.length > 1 && objectIdAndRoi[1]) {
+                const roiParts = objectIdAndRoi[1].split(',');
+                if (roiParts.length === 4) {
+                    roi = {
+                        x: parseFloat(roiParts[0]),
+                        y: parseFloat(roiParts[1]),
+                        w: parseFloat(roiParts[2]),
+                        h: parseFloat(roiParts[3]),
+                    };
+                } else {
+                    console.warn('Invalid ROI format in URN:', urnString);
+                }
+            }
+        }
+        
+        const namespace = parts[2];
+        const collectionVersion = parts[3];
+        const collectionParts = collectionVersion.split('.');
+        
+        if (collectionParts.length < 2) {
+            console.error('Invalid collection component in URN:', urnString);
+            return null;
+        }
+
+        return {
+            baseUrn: baseUrnParts.join(':'),
+            namespace: namespace,
+            collectionPart1: collectionParts[0],
+            collectionPart2: collectionParts[1],
+            objectId: objectId,
+            roi: roi
+        };
+    }
+
+    // --- getIIIFImageUrl ---
+    function getIIIFImageUrl(urnString, options = {}) {
+        const parsedUrn = parseURN(urnString);
+        if (!parsedUrn) return null;
+
+        const { namespace, collectionPart1, collectionPart2, objectId, roi } = parsedUrn;
+
+        const iiifPrefix = `${IIIF_BASE_PATH}/${namespace}/${collectionPart1}/${collectionPart2}`;
+        const imageIdentifier = `${objectId}.tif`;
+
+        let regionParam = 'full';
+        if (roi) {
+            regionParam = `pct:${roi.x * 100},${roi.y * 100},${roi.w * 100},${roi.h * 100}`;
+        } else if (options.region) {
+             regionParam = options.region;
+        }
+
+        let sizeParam = 'full';
+        if (options.width && options.height) {
+            if (options.width >= options.height) {
+                sizeParam = `${Math.round(options.width)},`;
+            } else {
+                sizeParam = `,${Math.round(options.height)}`;
+            }
+        } else if (options.width) {
+            sizeParam = `${Math.round(options.width)},`;
+        } else if (options.height) {
+            sizeParam = `,${Math.round(options.height)}`;
+        } else if (options.size) {
+            sizeParam = options.size;
+        }
+
+        const rotationParam = '0';
+        const qualityParam = 'default';
+        const formatParam = 'jpg';
+
+        return `${IIIF_PROTOCOL}://${IIIF_SERVER}${iiifPrefix}/${imageIdentifier}/${regionParam}/${sizeParam}/${rotationParam}/${qualityParam}.${formatParam}`;
+    }
+
+    // --- HMTImageViewer Class ---
+    class HMTImageViewer {
+        constructor(elementId, urnString, viewerOptions = {}) {
+            this.container = document.getElementById(elementId);
+            if (!this.container) {
+                throw new Error(`Element with ID '${elementId}' not found.`);
+            }
+            this.container.innerHTML = '';
+
+            this.baseUrnParsed = parseURN(urnString);
+            if (!this.baseUrnParsed) {
+                throw new Error(`Invalid URN for viewer: ${urnString}`);
+            }
+            this.baseUrn = this.baseUrnParsed.baseUrn;
+
+            this.rectangleSelectedListener = viewerOptions.rectangleSelectedListener || function() {};
+            this.queryListener = viewerOptions.queryListener || function() {};
+
+            this.canvas = document.createElement('canvas');
+            this.ctx = this.canvas.getContext('2d');
+            this.container.appendChild(this.canvas);
+            this._updateCursor(); // Set initial cursor
+
+            this.originalWidth = 0;
+            this.originalHeight = 0;
+            this.currentImage = new Image();
+            this.currentImage.crossOrigin = "Anonymous";
+
+            this.rectangles = []; 
+
+            this.currentScale = 1.0;
+            this.viewOriginX = 0;   
+            this.viewOriginY = 0;   
+
+            this.isPanning = false;
+            this.isSelecting = false;
+            this.lastMouseX = 0;
+            this.lastMouseY = 0;
+            this.selectionStartX = 0; 
+            this.selectionStartY = 0; 
+            this.currentSelectionRect = null;
+
+            this._initEventListeners();
+        }
+
+        async init() {
+            try {
+                const infoUrl = `${IIIF_PROTOCOL}://${IIIF_SERVER}${IIIF_BASE_PATH}/${this.baseUrnParsed.namespace}/${this.baseUrnParsed.collectionPart1}/${this.baseUrnParsed.collectionPart2}/${this.baseUrnParsed.objectId}.tif/info.json`;
+                const response = await fetch(infoUrl, { mode: 'cors' });
+                if (!response.ok) throw new Error(`Failed to fetch image info: ${response.statusText}`);
+                const infoData = await response.json();
+                this.originalWidth = infoData.width;
+                this.originalHeight = infoData.height;
+
+                this.resizeCanvasToContainer();
+                this.fitImageToCanvas(); 
+                this.loadCurrentImage();
+            } catch (error) {
+                console.error("Error initializing viewer:", error);
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.fillText(`Error: ${error.message}`, 10, 50);
+            }
+        }
+        
+        resizeCanvasToContainer() {
+            this.canvas.width = this.container.clientWidth;
+            this.canvas.height = this.container.clientHeight;
+        }
+
+        fitImageToCanvas(mode = 'width') {
+            if (this.originalWidth === 0 || this.originalHeight === 0) return;
+            const canvasAspect = this.canvas.width / this.canvas.height;
+            const imageAspect = this.originalWidth / this.originalHeight;
+
+            if (mode === 'contain') {
+                if (imageAspect > canvasAspect) {
+                    this.currentScale = this.canvas.width / this.originalWidth;
+                } else {
+                    this.currentScale = this.canvas.height / this.originalHeight;
+                }
+            } else if (mode === 'height') {
+                 this.currentScale = this.canvas.height / this.originalHeight;
+            } else {
+                 this.currentScale = this.canvas.width / this.originalWidth;
+            }
+            
+            const displayWidth = this.originalWidth * this.currentScale;
+            const displayHeight = this.originalHeight * this.currentScale;
+            this.viewOriginX = (this.canvas.width - displayWidth) / 2;
+            this.viewOriginY = (this.canvas.height - displayHeight) / 2;
+        }
+
+        loadCurrentImage() {
+            if (this.originalWidth === 0 || this.originalHeight === 0) return;
+            
+            let regionX = -this.viewOriginX / this.currentScale;
+            let regionY = -this.viewOriginY / this.currentScale;
+            let regionW = this.canvas.width / this.currentScale;
+            let regionH = this.canvas.height / this.currentScale;
+            
+            regionX = Math.max(0, regionX);
+            regionY = Math.max(0, regionY);
+            regionW = Math.min(this.originalWidth - regionX, regionW);
+            regionH = Math.min(this.originalHeight - regionY, regionH);
+            
+            if (regionW <=0 || regionH <= 0) {
+                this.redraw(); 
+                return;
+            }
+            
+            const iiifRegionParam = `${Math.round(regionX)},${Math.round(regionY)},${Math.round(regionW)},${Math.round(regionH)}`;
+            const iiifSizeParam = `!${this.canvas.width},${this.canvas.height}`; 
+
+            const imageUrl = getIIIFImageUrl(this.baseUrn, {
+                region: iiifRegionParam,
+                size: iiifSizeParam
+            });
+
+            if (!imageUrl) {
+                console.error("Could not generate image URL for viewer display.");
+                return;
+            }
+            
+            this.currentImage.onload = () => {
+                this.redraw();
+            };
+            this.currentImage.onerror = (e) => {
+                console.error("Error loading image:", imageUrl, e);
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillText(`Error loading image.`, 10, 50);
+            };
+            this.currentImage.src = imageUrl;
+        }
+
+        redraw() {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            if (this.currentImage.complete && this.currentImage.naturalWidth > 0) {
+                 let drawW = this.currentImage.width;
+                 let drawH = this.currentImage.height;
+                 let drawX = (this.canvas.width - drawW) / 2;
+                 let drawY = (this.canvas.height - drawH) / 2;
+                 this.ctx.drawImage(this.currentImage, drawX, drawY, drawW, drawH);
+            }
+
+            this.rectangles.forEach(rect => {
+                this.ctx.fillStyle = rect.color;
+                const canvasRectX = this.viewOriginX + (rect.x * this.originalWidth * this.currentScale);
+                const canvasRectY = this.viewOriginY + (rect.y * this.originalHeight * this.currentScale);
+                const canvasRectW = rect.w * this.originalWidth * this.currentScale;
+                const canvasRectH = rect.h * this.originalHeight * this.currentScale;
+                this.ctx.fillRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+            });
+
+            if (this.isSelecting && this.currentSelectionRect) {
+                this.ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
+                this.ctx.strokeStyle = 'rgba(0, 100, 255, 0.7)';
+                this.ctx.lineWidth = 1;
+                const cs = this.currentSelectionRect;
+                const canvasRectX = this.viewOriginX + (cs.x * this.originalWidth * this.currentScale);
+                const canvasRectY = this.viewOriginY + (cs.y * this.originalHeight * this.currentScale);
+                const canvasRectW = cs.w * this.originalWidth * this.currentScale;
+                const canvasRectH = cs.h * this.originalHeight * this.currentScale;
+                this.ctx.fillRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+                this.ctx.strokeRect(canvasRectX, canvasRectY, canvasRectW, canvasRectH);
+            }
+        }
+
+        _getMousePosOnCanvas(event) {
+            const rect = this.canvas.getBoundingClientRect();
+            return {
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top
+            };
+        }
+
+        _canvasToImagePercentCoords(canvasX, canvasY) {
+            if (this.originalWidth === 0 || this.originalHeight === 0 || this.currentScale === 0) {
+                return { x:0, y:0 };
+            }
+            const imagePxX = (canvasX - this.viewOriginX) / this.currentScale;
+            const imagePxY = (canvasY - this.viewOriginY) / this.currentScale;
+            return {
+                x: imagePxX / this.originalWidth,
+                y: imagePxY / this.originalHeight
+            };
+        }
+        
+        _updateCursor(event = null) {
+            if (this.isPanning) {
+                this.canvas.style.cursor = 'grabbing';
+            } else if (this.isSelecting) {
+                this.canvas.style.cursor = 'crosshair';
+            } else if (event && event.altKey) { // Hovering with Alt
+                this.canvas.style.cursor = 'crosshair';
+            } else if (event && event.shiftKey) { // Hovering with Shift
+                this.canvas.style.cursor = 'help';
+            } else { // Default hover
+                this.canvas.style.cursor = 'grab';
+            }
+        }
+
+        _initEventListeners() {
+            this.canvas.addEventListener('mousedown', this._onMouseDown.bind(this));
+            this.canvas.addEventListener('mousemove', this._onMouseMove.bind(this));
+            this.canvas.addEventListener('mouseup', this._onMouseUp.bind(this));
+            this.canvas.addEventListener('mouseleave', this._onMouseLeave.bind(this));
+            this.canvas.addEventListener('wheel', this._onWheel.bind(this), { passive: false });
+            this.canvas.addEventListener('click', this._onClick.bind(this));
+
+            // Listen to key events on window to update cursor if keys are pressed/released
+            // without mouse movement over canvas, though mousemove is primary for hover.
+            window.addEventListener('keydown', this._onGlobalKeyDown.bind(this));
+            window.addEventListener('keyup', this._onGlobalKeyUp.bind(this));
+        }
+        
+        _onGlobalKeyDown(event) {
+            // If mouse is over canvas, update cursor
+            if (this.canvas.matches(':hover')) {
+                 this._updateCursor(event);
+            }
+        }
+        _onGlobalKeyUp(event) {
+             if (this.canvas.matches(':hover')) {
+                 this._updateCursor(event);
+            }
+        }
+
+
+        _onMouseDown(event) {
+            const pos = this._getMousePosOnCanvas(event);
+            this.lastMouseX = pos.x;
+            this.lastMouseY = pos.y;
+
+            if (event.altKey) { 
+                this.isSelecting = true;
+                this.isPanning = false;
+                const startPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                this.selectionStartX = startPercentCoords.x;
+                this.selectionStartY = startPercentCoords.y;
+                this.currentSelectionRect = {
+                    x: this.selectionStartX,
+                    y: this.selectionStartY,
+                    w: 0,
+                    h: 0
+                };
+            } else if (!event.shiftKey) { // Pan only if not shift (shift is for query on click)
+                this.isPanning = true;
+                this.isSelecting = false;
+            }
+            this._updateCursor(event); // Update cursor based on action/keys
+        }
+
+        _onMouseMove(event) {
+            const pos = this._getMousePosOnCanvas(event);
+            if (this.isPanning) {
+                const dx = pos.x - this.lastMouseX;
+                const dy = pos.y - this.lastMouseY;
+                this.viewOriginX += dx;
+                this.viewOriginY += dy;
+                this.lastMouseX = pos.x;
+                this.lastMouseY = pos.y;
+                this.loadCurrentImage(); 
+            } else if (this.isSelecting) {
+                const currentPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                const x1 = Math.min(this.selectionStartX, currentPercentCoords.x);
+                const y1 = Math.min(this.selectionStartY, currentPercentCoords.y);
+                const x2 = Math.max(this.selectionStartX, currentPercentCoords.x);
+                const y2 = Math.max(this.selectionStartY, currentPercentCoords.y);
+                this.currentSelectionRect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+                this.redraw();
+            }
+            this._updateCursor(event); // Update cursor on hover
+        }
+
+        _onMouseUp(event) {
+            const wasPanning = this.isPanning;
+            const wasSelecting = this.isSelecting;
+
+            this.isPanning = false;
+            this.isSelecting = false;
+
+            if (wasSelecting) {
+                if (this.currentSelectionRect && this.currentSelectionRect.w > 0.001 && this.currentSelectionRect.h > 0.001) {
+                    let { x, y, w, h } = this.currentSelectionRect;
+                    x = Math.max(0, Math.min(1 - w, x));
+                    y = Math.max(0, Math.min(1 - h, y));
+                    w = Math.max(0, Math.min(1 - x, w));
+                    h = Math.max(0, Math.min(1 - y, h));
+                    
+                    if (w > 0 && h > 0) {
+                        const newRect = {
+                            x: x, y: y, w: w, h: h,
+                            urnWithRoi: `${this.baseUrn}@${x.toFixed(4)},${y.toFixed(4)},${w.toFixed(4)},${h.toFixed(4)}`,
+                            color: `rgba(${Math.floor(Math.random()*255)}, ${Math.floor(Math.random()*255)}, ${Math.floor(Math.random()*255)}, 0.5)`
+                        };
+                        this.rectangles.push(newRect);
+                        const allRectUrns = this.rectangles.map(r => r.urnWithRoi).join('\n');
+                        this.rectangleSelectedListener(allRectUrns, this.rectangles); // Pass full rect objects too
+                    }
+                }
+                this.currentSelectionRect = null;
+                this.redraw();
+            }
+            this._updateCursor(event); // Update cursor after action ends
+        }
+        
+        _onMouseLeave(event) {
+            this.isPanning = false; // Stop panning if mouse leaves
+            if (this.isSelecting) { // If was selecting, cancel it
+                 this.isSelecting = false;
+                 this.currentSelectionRect = null;
+                 this.redraw();
+            }
+            this.canvas.style.cursor = 'grab'; // Reset to default grab
+        }
+
+        _onWheel(event) {
+            event.preventDefault();
+            const pos = this._getMousePosOnCanvas(event);
+            const zoomIntensity = 0.1;
+            const delta = event.deltaY < 0 ? 1 + zoomIntensity : 1 - zoomIntensity;
+
+            const imgPtX = (pos.x - this.viewOriginX) / this.currentScale;
+            const imgPtY = (pos.y - this.viewOriginY) / this.currentScale;
+
+            this.currentScale *= delta;
+            this.currentScale = Math.max(0.01, Math.min(this.currentScale, 20)); 
+
+            this.viewOriginX = pos.x - (imgPtX * this.currentScale);
+            this.viewOriginY = pos.y - (imgPtY * this.currentScale);
+
+            this.loadCurrentImage();
+        }
+
+        _onClick(event) {
+            // Click is primarily for query mode
+            if (event.shiftKey) {
+                const pos = this._getMousePosOnCanvas(event);
+                const clickPercentCoords = this._canvasToImagePercentCoords(pos.x, pos.y);
+                
+                const clickedRects = this.rectangles.filter(rect => {
+                    return clickPercentCoords.x >= rect.x &&
+                           clickPercentCoords.x <= rect.x + rect.w &&
+                           clickPercentCoords.y >= rect.y &&
+                           clickPercentCoords.y <= rect.y + rect.h;
+                });
+                this.queryListener(clickedRects.map(r => r.urnWithRoi));
+            }
+            // Standard click (without shift or alt) doesn't do anything else here.
+            // Pan is mousedown-drag-mouseup. Selection is alt-mousedown-drag-mouseup.
+        }
+        
+        async setUrn(newUrnString) {
+            this.baseUrnParsed = parseURN(newUrnString);
+            if (!this.baseUrnParsed) {
+                console.error(`Invalid URN for viewer: ${newUrnString}`);
+                this.ctx.font = "16px Arial";
+                this.ctx.fillStyle = "red";
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillText(`Error: Invalid URN.`, 10, 50);
+                return;
+            }
+            this.baseUrn = this.baseUrnParsed.baseUrn;
+            this.rectangles = []; 
+            this.rectangleSelectedListener("", []); 
+            this.queryListener([]); 
+            await this.init();
+        }
+
+        removeRectangle(urnWithRoiToRemove) {
+            const initialLength = this.rectangles.length;
+            this.rectangles = this.rectangles.filter(rect => rect.urnWithRoi !== urnWithRoiToRemove);
+            if (this.rectangles.length < initialLength) {
+                this.redraw();
+                const allRectUrns = this.rectangles.map(r => r.urnWithRoi).join('\n');
+                this.rectangleSelectedListener(allRectUrns, this.rectangles); // Pass full rect objects too
+                return true;
+            }
+            return false;
+        }
+        
+        destroy() {
+            window.removeEventListener('keydown', this._onGlobalKeyDown);
+            window.removeEventListener('keyup', this._onGlobalKeyUp);
+            this.canvas.removeEventListener('mousedown', this._onMouseDown);
+            this.canvas.removeEventListener('mousemove', this._onMouseMove);
+            this.canvas.removeEventListener('mouseup', this._onMouseUp);
+            this.canvas.removeEventListener('mouseleave', this._onMouseLeave);
+            this.canvas.removeEventListener('wheel', this._onWheel);
+            this.canvas.removeEventListener('click', this._onClick);
+            if (this.container && this.canvas.parentNode === this.container) {
+                this.container.removeChild(this.canvas);
+            }
+            this.container.innerHTML = '';
+        }
+    }
+
+    function createViewer(elementId, urnString, viewerOptions = {}) {
+        try {
+            const viewer = new HMTImageViewer(elementId, urnString, viewerOptions);
+            viewer.init(); 
+            return viewer;
+        } catch (error) {
+            console.error(`Failed to create viewer for ${elementId}:`, error);
+            const container = document.getElementById(elementId);
+            if (container) {
+                container.innerHTML = `<p style="color:red;">Error creating viewer: ${error.message}</p>`;
+            }
+            return null;
+        }
+    }
+
+    const HMTImageLib = {
+        createViewer,
+        getIIIFImageUrl,
+        _parseURN: parseURN 
+    };
+
+    global.HMTImageLib = HMTImageLib;
+
+}(typeof window !== 'undefined' ? window : this));
+```
+
+**Key changes in `hmt-image-lib.js`:**
+
+1.  **`_updateCursor(event = null)` method:** Centralized logic to set canvas cursor based on interaction state (`isPanning`, `isSelecting`) or key modifiers (`event.altKey`, `event.shiftKey`) during hover.
+2.  **Cursor updates in event handlers:**
+    *   `_onMouseDown`: Sets cursor for panning (`grabbing`) or selection (`crosshair`).
+    *   `_onMouseMove`: Updates cursor during hover based on `altKey` or `shiftKey`.
+    *   `_onMouseUp`: Resets cursor based on current key state or to `grab`.
+    *   `_onMouseLeave`: Resets cursor to `grab` and cancels ongoing selections.
+    *   `_onGlobalKeyDown`, `_onGlobalKeyUp`: Added listeners to `window` to update cursor if keys are pressed/released while the mouse is over the canvas but not moving.
+3.  **`removeRectangle(urnWithRoiToRemove)` method:**
+    *   Filters the `this.rectangles` array.
+    *   Calls `redraw()`.
+    *   Calls `rectangleSelectedListener` with the updated list of URNs (and now also the array of rectangle objects).
+4.  **`rectangleSelectedListener` now receives two arguments:** `urnsWithRoiString` and `rectanglesArray`. The second one is for convenience in the test page if needed.
+5.  **`destroy()` method:** Added listeners for global keydown/keyup to be removed.
+6.  Pan (`isPanning = true`) is now only initiated if `!event.shiftKey` in `_onMouseDown` to prevent panning when a shift-click for query is intended.
+
+---
+
+Now, the new HTML test page: `test_viewer_remove_rects.html`
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HMT Image Lib - Rectangle Management Test</title>
+    <script src="hmt-image-lib.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; display: flex; gap: 20px;}
+        .controls { width: 350px; }
+        .viewer-container {
+            width: 800px;
+            height: 600px;
+            border: 1px solid #ccc;
+            overflow: hidden;
+        }
+        #urnInput { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+        button { margin-bottom: 10px; }
+        #highlightedRectanglesList div {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9em;
+        }
+        #highlightedRectanglesList div:last-child {
+            border-bottom: none;
+        }
+        #highlightedRectanglesList span {
+            word-break: break-all;
+            margin-right: 10px;
+        }
+        #highlightedRectanglesList .remove-rect-btn {
+            padding: 3px 8px;
+            font-size: 0.8em;
+            cursor: pointer;
+        }
+        #queryResult { 
+            width: 100%; 
+            box-sizing: border-box; 
+            min-height: 50px; 
+            font-size: 0.9em; 
+            background-color: #f9f9f9; 
+            border: 1px solid #ddd; 
+            padding: 5px;
+            white-space: pre-wrap;
+        }
+        .cursor-info { font-size: 0.85em; color: #555; margin-top:15px;}
+        .cursor-info strong { color: #000; }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h1>Rectangle Management</h1>
+        
+        <label for="urnInput">Image URN:</label>
+        <input type="text" id="urnInput" value="urn:cite2:hmt:vaimg.2017a:VA012RN_0013">
+        <button id="loadUrnButton">Load/Update Image</button>
+
+        <div class="cursor-info">
+            <p><strong>Cursors:</strong></p>
+            <ul>
+                <li>Default/Pan: <strong>Grab Hand</strong></li>
+                <li>Selection (Option/Alt key): <strong>Crosshair</strong></li>
+                <li>Query (Shift key): <strong>Help (?)</strong></li>
+            </ul>
+        </div>
+
+        <h3>Highlighted Rectangles:</h3>
+        <div id="highlightedRectanglesListContainer" style="border: 1px solid #ddd; max-height: 200px; overflow-y: auto;">
+             <div id="highlightedRectanglesList">
+                <!-- Rectangles will be listed here by JavaScript -->
+             </div>
+        </div>
+        <p id="noRectsMessage" style="display: none;">No rectangles highlighted yet.</p>
+
+
+        <h3>Query Result:</h3>
+        <pre id="queryResult"></pre>
+    </div>
+
+    <div id="interactiveViewer" class="viewer-container"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const urnInput = document.getElementById('urnInput');
+            const loadUrnButton = document.getElementById('loadUrnButton');
+            const rectanglesListDiv = document.getElementById('highlightedRectanglesList');
+            const noRectsMessage = document.getElementById('noRectsMessage');
+            const queryResultPre = document.getElementById('queryResult');
+
+            let currentViewer = null;
+
+            function updateRectanglesList(rectanglesArray) {
+                rectanglesListDiv.innerHTML = ''; // Clear current list
+                if (rectanglesArray && rectanglesArray.length > 0) {
+                    noRectsMessage.style.display = 'none';
+                    rectanglesArray.forEach(rect => {
+                        const itemDiv = document.createElement('div');
+                        const urnSpan = document.createElement('span');
+                        urnSpan.textContent = rect.urnWithRoi;
+                        
+                        const removeButton = document.createElement('button');
+                        removeButton.textContent = 'Remove';
+                        removeButton.classList.add('remove-rect-btn');
+                        removeButton.dataset.urn = rect.urnWithRoi;
+
+                        removeButton.addEventListener('click', function() {
+                            if (currentViewer) {
+                                currentViewer.removeRectangle(this.dataset.urn);
+                            }
+                        });
+
+                        itemDiv.appendChild(urnSpan);
+                        itemDiv.appendChild(removeButton);
+                        rectanglesListDiv.appendChild(itemDiv);
+                    });
+                } else {
+                    noRectsMessage.style.display = 'block';
+                }
+            }
+
+            function rectangleSelectedListener(urnsWithRoiString, rectanglesArray) {
+                // The HMTImageViewer now calls this with the array of rectangle objects
+                updateRectanglesList(rectanglesArray);
+            }
+
+            function queryListener(matchingUrnsList) {
+                if (matchingUrnsList.length > 0) {
+                    queryResultPre.textContent = "Clicked point is within:\n" + matchingUrnsList.join('\n');
+                } else {
+                    queryResultPre.textContent = "Clicked point is not within any highlighted rectangle.";
+                }
+            }
+            
+            function setupViewer(urn) {
+                if (currentViewer && typeof currentViewer.destroy === 'function') {
+                    currentViewer.destroy();
+                }
+                currentViewer = HMTImageLib.createViewer('interactiveViewer', urn, {
+                    rectangleSelectedListener: rectangleSelectedListener,
+                    queryListener: queryListener
+                });
+
+                if (!currentViewer && document.getElementById('interactiveViewer').textContent.includes("Error")) {
+                    updateRectanglesList([]); // Clear list on error
+                    queryResultPre.textContent = "";
+                } else if (currentViewer) {
+                    // Initial state for rectangles (should be empty from viewer)
+                    updateRectanglesList(currentViewer.rectangles);
+                }
+            }
+            
+            loadUrnButton.addEventListener('click', () => {
+                const newUrn = urnInput.value.trim();
+                if (currentViewer && typeof currentViewer.setUrn === 'function') {
+                    currentViewer.setUrn(newUrn).then(() => {
+                         // setUrn internally calls rectangleSelectedListener with empty arrays
+                         // so the list will be cleared automatically.
+                         queryResultPre.textContent = ""; // Clear query result too
+                    });
+                } else { 
+                    setupViewer(newUrn);
+                }
+            });
+
+            // Initial load
+            setupViewer(urnInput.value.trim());
+        });
+    </script>
+</body>
+</html>
+```
+
+**Key features of `test_viewer_remove_rects.html`:**
+
+1.  **URN Input & Load:** Same as before.
+2.  **Cursor Info:** A small section now explicitly tells the user about the different cursors.
+3.  **Highlighted Rectangles List:**
+    *   Displayed in a `div` (`highlightedRectanglesList`).
+    *   The `updateRectanglesList` function dynamically creates list items, each showing the rectangle's URN@ROI and a "Remove" button.
+    *   The "Remove" button, when clicked, calls `currentViewer.removeRectangle(urn)`.
+    *   The `rectangleSelectedListener` (called by the viewer when rectangles are added OR removed) now calls `updateRectanglesList` to keep the displayed list in sync.
+4.  **"No rectangles" message:** Shown when the list is empty.
+5.  **Interactions:**
+    *   Option/Alt-click-drag to add rectangles (updates image and list).
+    *   Click "Remove" button next to a rectangle in the list (updates image and list).
+    *   Shift-click to query (displays results).
+6.  **CSS Styling:** Basic styling for the list and buttons.
+
+Now, if you save both `hmt-image-lib.js` (with the new updates) and `test_viewer_remove_rects.html` in the same directory and open the HTML file in a browser, you should be able to test all the requested functionalities, including the cursor changes and rectangle removal.
+
+### USER
+Fantastic! I’m going to publish this to github! Could you write API documentation  for the library?
+
+### ASSISTANT
+Okay, here's API documentation for the `hmt-image-lib.js` library. I've structured it in a way that would be suitable for a `README.md` file in your GitHub repository.
+
+---
+
+# HMT Image Library (`hmt-image-lib.js`) API Documentation
+
+## Table of Contents
+
+1.  [Overview](#overview)
+2.  [Getting Started](#getting-started)
+3.  [Global Library Object: `HMTImageLib`](#global-library-object-hmtimagelib)
+    *   [`HMTImageLib.createViewer(elementId, urnString, viewerOptions)`](#hmtimagelibcreateviewerelementid-urnstring-vieweroptions)
+    *   [`HMTImageLib.getIIIFImageUrl(urnString, options)`](#hmtimagelibgetiiifimageurlurnstring-options)
+    *   [`HMTImageLib._parseURN(urnString)`](#hmtimagelib_parseurnurnstring-internaladvanced)
+4.  [HMTImageViewer Instance](#hmtimageviewer-instance)
+    *   [Properties (Internal)](#properties-internal)
+    *   [Methods](#methods)
+        *   [`viewer.setUrn(newUrnString)`](#viewerseturnnewurnstring)
+        *   [`viewer.removeRectangle(urnWithRoiToRemove)`](#viewerremoverectangleurnwithroitoremove)
+        *   [`viewer.destroy()`](#viewerdestroy)
+5.  [Homer Multitext (HMT) CITE2 URN Format](#homer-multitext-hmt-cite2-urn-format)
+6.  [Viewer Interaction Modes & Cursors](#viewer-interaction-modes--cursors)
+
+## 1. Overview
+
+`hmt-image-lib.js` is a JavaScript library for displaying and interacting with images from the Homer Multitext (HMT) project via the IIIF (International Image Interoperability Framework) protocol. It provides functionality to:
+
+*   Create an embeddable image viewer with zoom, pan, rectangle selection, and query capabilities.
+*   Generate IIIF Image API URLs for HMT images, including support for regions of interest (ROI) and image scaling.
+
+The library is designed to be used directly in web pages and can be easily integrated using a `<script>` tag, including via services like jsDelivr.
+
+## 2. Getting Started
+
+1.  **Include the Library:**
+    Add the library to your HTML file. If you host it on GitHub, you can use jsDelivr:
+
+    ```html
+    <!-- Replace YOUR_USERNAME, YOUR_REPO, and VERSION/COMMIT_HASH appropriately -->
+    <script src="https://cdn.jsdelivr.net/gh/YOUR_USERNAME/YOUR_REPO@VERSION/hmt-image-lib.js"></script>
+    <!-- Or link to a local copy -->
+    <!-- <script src="hmt-image-lib.js"></script> -->
+    ```
+
+2.  **Create a Container for the Viewer:**
+    Add an HTML element (e.g., a `div`) where the viewer will be rendered.
+
+    ```html
+    <div id="myImageViewer" style="width: 800px; height: 600px; border: 1px solid black;"></div>
+    ```
+
+3.  **Initialize the Viewer:**
+    Use JavaScript to create a viewer instance.
+
+    ```html
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const urn = "urn:cite2:hmt:vaimg.2017a:VA012RN_0013";
+            const viewer = HMTImageLib.createViewer('myImageViewer', urn);
+            
+            // To use the URL generation function:
+            const imageUrl = HMTImageLib.getIIIFImageUrl(urn, { width: 500 });
+            console.log("IIIF Image URL:", imageUrl);
+        });
+    </script>
+    ```
+
+## 3. Global Library Object: `HMTImageLib`
+
+The library exposes a single global object `HMTImageLib`.
+
+### `HMTImageLib.createViewer(elementId, urnString, viewerOptions = {})`
+
+Creates and initializes an HMT Image Viewer instance within the specified HTML element.
+
+*   **Parameters:**
+    *   `elementId` (String): The `id` of the HTML `div` (or other block element) that will contain the viewer.
+    *   `urnString` (String): The CITE2 URN identifying the HMT image to display. See [HMT CITE2 URN Format](#homer-multitext-hmt-cite2-urn-format).
+    *   `viewerOptions` (Object, optional): An object to configure viewer behavior.
+        *   `rectangleSelectedListener` (Function, optional): A callback function invoked when a rectangle is drawn by the user or when rectangles are updated (e.g., removed).
+            *   **Callback arguments:**
+                1.  `urnsWithRoiString` (String): A newline-separated string of all currently highlighted rectangle URNs (e.g., `urn:...@x,y,w,h\nurn:...@x,y,w,h`).
+                2.  `rectanglesArray` (Array): An array of rectangle objects. Each object has the structure:
+                    ```javascript
+                    {
+                        x: Number, // X-coordinate of top-left corner (percentage, 0.0-1.0)
+                        y: Number, // Y-coordinate of top-left corner (percentage, 0.0-1.0)
+                        w: Number, // Width of rectangle (percentage, 0.0-1.0)
+                        h: Number, // Height of rectangle (percentage, 0.0-1.0)
+                        urnWithRoi: String, // The full URN with ROI, e.g., "urn:...@x,y,w,h"
+                        color: String // CSS color string for the rectangle fill, e.g., "rgba(r,g,b,0.5)"
+                    }
+                    ```
+        *   `queryListener` (Function, optional): A callback function invoked when the user shift-clicks on the image.
+            *   **Callback arguments:**
+                1.  `matchingUrnsList` (Array): An array of URN strings (with ROI) for all rectangles that contain the clicked point. An empty array `[]` is passed if no rectangles contain the point.
+
+*   **Returns:** `(HMTImageViewer | null)`: An instance of the `HMTImageViewer` class, or `null` if initialization fails (e.g., invalid `elementId` or `urnString`). The viewer's image loading (`info.json` and initial tile) is asynchronous.
+
+*   **Example:**
+    ```javascript
+    function handleRectangles(urnsString, rectsArray) {
+        console.log("Selected Rectangles URNs:\n", urnsString);
+        console.log("Selected Rectangles Data:", rectsArray);
+        // Update UI with the list of rectangles
+    }
+
+    function handleQuery(matchedUrns) {
+        if (matchedUrns.length > 0) {
+            alert("Clicked in rectangles:\n" + matchedUrns.join('\n'));
+        } else {
+            alert("Clicked outside any rectangle.");
+        }
+    }
+
+    const viewer = HMTImageLib.createViewer(
+        'myViewerDiv',
+        'urn:cite2:hmt:vaimg.2017a:VA012RN_0013',
+        {
+            rectangleSelectedListener: handleRectangles,
+            queryListener: handleQuery
+        }
+    );
+    ```
+
+### `HMTImageLib.getIIIFImageUrl(urnString, options = {})`
+
+Generates a IIIF Image API URL for a given HMT image URN.
+
+*   **Parameters:**
+    *   `urnString` (String): The CITE2 URN for the HMT image. This URN can optionally include a Region of Interest (ROI) suffix (e.g., `...@0.1,0.1,0.5,0.5`).
+    *   `options` (Object, optional): An object to specify IIIF parameters.
+        *   `width` (Number, optional): The desired width of the image in pixels. Aspect ratio is maintained.
+        *   `height` (Number, optional): The desired height of the image in pixels. Aspect ratio is maintained.
+        *   If both `width` and `height` are provided, the image is scaled to fit within the bounds defined by the *larger* of the two dimensions, while maintaining aspect ratio. For example, if requesting `width: 800, height: 600`, an image will be scaled such that its width is 800px (if wider than tall relative to requested aspect) or its height is 600px (if taller than wide relative to requested aspect), and the other dimension is scaled proportionally.
+        *   If an ROI is specified in the `urnString`, the `pct:x,y,w,h` IIIF region parameter is used.
+        *   If no size is requested, `size` is set to `full`.
+        *   The `format` is always `jpg`.
+
+*   **Returns:** `(String | null)`: The fully formed IIIF Image API URL, or `null` if the URN cannot be parsed.
+
+*   **Example:**
+    ```javascript
+    const fullImageUrl = HMTImageLib.getIIIFImageUrl("urn:cite2:hmt:vaimg.2017a:VA012RN_0013");
+    // Result: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/full/full/0/default.jpg
+
+    const sizedImageUrl = HMTImageLib.getIIIFImageUrl("urn:cite2:hmt:vaimg.2017a:VA012RN_0013", { width: 300 });
+    // Result: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/full/300,/0/default.jpg
+
+    const roiImageUrl = HMTImageLib.getIIIFImageUrl("urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.25,0.5,0.4,0.15", { width: 200 });
+    // Result: http://www.homermultitext.org/iipsrv?IIIF=/project/homer/pyramidal/deepzoom/hmt/vaimg/2017a/VA012RN_0013.tif/pct:25,50,40,15/200,/0/default.jpg
+    ```
+
+### `HMTImageLib._parseURN(urnString)` (Internal/Advanced)
+
+A helper function to parse an HMT CITE2 URN string into its components. While exported, it's primarily for internal use or advanced scenarios.
+
+*   **Parameters:**
+    *   `urnString` (String): The CITE2 URN string.
+*   **Returns:** `(Object | null)`: An object containing parsed URN components, or `null` if parsing fails.
+    *   **Object Structure:**
+        ```javascript
+        {
+            baseUrn: String,         // URN without ROI, e.g., "urn:cite2:hmt:vaimg.2017a:VA012RN_0013"
+            namespace: String,       // e.g., "hmt"
+            collectionPart1: String, // e.g., "vaimg"
+            collectionPart2: String, // e.g., "2017a"
+            objectId: String,        // e.g., "VA012RN_0013"
+            roi: {                   // null if no ROI in URN
+                x: Number,           // Percentage (0.0-1.0)
+                y: Number,           // Percentage (0.0-1.0)
+                w: Number,           // Percentage (0.0-1.0)
+                h: Number            // Percentage (0.0-1.0)
+            } | null
+        }
+        ```
+
+## 4. HMTImageViewer Instance
+
+An instance of `HMTImageViewer` is returned by `HMTImageLib.createViewer()`. It represents a single image viewer on the page.
+
+### Properties (Internal)
+
+The viewer instance manages internal state like current scale, view origin, loaded image data, and the list of drawn rectangles. These are generally not intended for direct manipulation.
+
+### Methods
+
+#### `async viewer.setUrn(newUrnString)`
+
+Loads a new image into the viewer, replacing the current one. This clears any existing highlighted rectangles.
+
+*   **Parameters:**
+    *   `newUrnString` (String): The CITE2 URN of the new HMT image to display.
+*   **Returns:** `Promise<void>`: A promise that resolves after the new image's `info.json` has been fetched and an attempt to load the initial image view has been made. It rejects if the URN is invalid.
+*   **Side Effects:**
+    *   Clears all previously drawn rectangles.
+    *   Calls the `rectangleSelectedListener` (if provided) with empty arguments.
+    *   Calls the `queryListener` (if provided) with an empty list.
+
+#### `viewer.removeRectangle(urnWithRoiToRemove)`
+
+Removes a specific highlighted rectangle from the viewer.
+
+*   **Parameters:**
+    *   `urnWithRoiToRemove` (String): The full URN string of the rectangle to remove, including its ROI suffix (e.g., `"urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.2,0.3,0.4"`).
+*   **Returns:** `Boolean`: `true` if a rectangle with the given URN was found and removed, `false` otherwise.
+*   **Side Effects:**
+    *   Redraws the image without the removed rectangle.
+    *   Calls the `rectangleSelectedListener` with the updated list of rectangles.
+
+#### `viewer.destroy()`
+
+Cleans up the viewer instance, removing its canvas from the DOM and detaching all event listeners. This should be called if the viewer is no longer needed, especially in single-page applications, to prevent memory leaks.
+
+*   **Parameters:** None.
+*   **Returns:** `void`.
+
+## 5. Homer Multitext (HMT) CITE2 URN Format
+
+Images are identified with CITE2 URNs, which have 5 components separated by colons:
+`urn:cite2:{namespace}:{collection-version}:{object-id}`
+
+*   **Example:** `urn:cite2:hmt:vaimg.2017a:VA012RN_0013`
+    *   `namespace`: `hmt`
+    *   `collection-version`: `vaimg.2017a` (parsed into `collectionPart1`="vaimg", `collectionPart2`="2017a")
+    *   `object-id`: `VA012RN_0013`
+
+**Region of Interest (ROI) Extension:**
+A URN can be extended with an ROI by appending `@x,y,w,h` to the `object-id` component.
+`x,y,w,h` are decimal values between 0.0 and 1.0 representing percentages of the image's total width and height.
+
+*   `(x,y)`: Coordinates of the top-left corner of the rectangle.
+*   `w`: Width of the rectangle.
+*   `h`: Height of the rectangle.
+
+*   **Example with ROI:** `urn:cite2:hmt:vaimg.2017a:VA012RN_0013@0.1,0.2,0.35,0.4`
+    This represents a rectangle starting at 10% from the left and 20% from the top, with a width of 35% of the image width and a height of 40% of the image height.
+
+## 6. Viewer Interaction Modes & Cursors
+
+The `HMTImageViewer` supports three main interaction modes, indicated by different mouse cursors:
+
+1.  **Standard Mode (Zoom & Pan):**
+    *   **Action:**
+        *   **Zoom:** Use the mouse wheel.
+        *   **Pan:** Click and drag the image.
+    *   **Cursor:** `grab` (becomes `grabbing` while panning).
+
+2.  **Rectangle Selection Mode:**
+    *   **Action:** Hold down the **Option (Alt)** key, then click and drag on the image to draw a rectangle.
+    *   **Cursor:** `crosshair` (when Option/Alt key is pressed or during selection drag).
+    *   **Result:** Drawn rectangles are filled with a random semi-transparent color. The `rectangleSelectedListener` is called.
+
+3.  **Query Mode:**
+    *   **Action:** Hold down the **Shift** key, then click on the image.
+    *   **Cursor:** `help` (question mark, when Shift key is pressed).
+    *   **Result:** The `queryListener` is called with a list of URNs for any highlighted rectangles that contain the clicked point.
+
+---
